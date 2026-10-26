@@ -495,12 +495,19 @@ class Handler(BaseHTTPRequestHandler):
             self._flash(f"/demandes/{dem['id']}", erreur="Le message est vide.")
             return
         sujet = f"Votre demande {dem.get('reference') or ''} — Hôtellerie du monastère"
-        if dem.get("telephone"):
+        conf_wa = whatsapp.configuration(db)
+        whatsapp_pret = bool(conf_wa.get("token") and conf_wa.get("phone_number_id"))
+        if dem.get("telephone") and whatsapp_pret:
             resultat = whatsapp.envoyer(db, dem["telephone"], texte)
             canal, destinataire = "whatsapp", whatsapp.afficher_numero(dem["telephone"])
         elif dem.get("email"):
+            # Sans WhatsApp configuré, le courriel reste un canal réel : on ne
+            # laisse pas une réponse en suspens faute de jeton Meta.
             resultat = emailer.envoyer(db, dem["email"], sujet, texte)
             canal, destinataire = "email", dem["email"]
+        elif dem.get("telephone"):
+            resultat = whatsapp.envoyer(db, dem["telephone"], texte)
+            canal, destinataire = "whatsapp", whatsapp.afficher_numero(dem["telephone"])
         else:
             resultat = {"ok": False, "ignore": True, "erreur": "aucun contact pour cet hôte"}
             canal, destinataire = "dashboard", ""

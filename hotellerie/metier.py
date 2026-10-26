@@ -78,8 +78,6 @@ def format_date(valeur, long: bool = False) -> str:
     d = lire_date(valeur)
     if not d:
         return "—"
-    if long:
-        return d.strftime("%-d %B %Y") if hasattr(d, "strftime") else d.isoformat()
     return d.strftime("%d/%m/%Y")
 
 
