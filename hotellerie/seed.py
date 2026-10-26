@@ -30,6 +30,10 @@ PARAMETRES_DEFAUT = {
     "agent_heures_fin": "21",
     "agent_delai_reponse": "24 à 48 heures",
     "wa_verify_token": config.VERIFY_TOKEN_DEFAUT,
+    "wa_api_version": "v21.0",
+    # Numéro d'essai du branchement WhatsApp (destinataire de test Meta).
+    "wa_numero_test": "2250151740187",
+    "site_url": "",
     "hoteliers_emails": config.EMAIL_MAISON,
     "hoteliers_whatsapp": "",
     "notifier_par_email": "1",

@@ -300,6 +300,47 @@ def test_whatsapp():
              f"{len(morceaux)} morceaux")
 
 
+
+def test_whatsapp_file(db: Base):
+    print("\nWhatsApp — file d'attente et envoi")
+    from hotellerie.channels import whatsapp as W
+
+    config.definir_parametre(db, "wa_token", "")
+    config.definir_parametre(db, "wa_phone_number_id", "")
+    res = W.envoyer(db, "0151740187", "Pax. Message d'essai.")
+    verifier("sans configuration, le message n'est pas perdu", res.get("ignore") is True)
+    ligne = db.ligne("SELECT * FROM envois ORDER BY id DESC LIMIT 1")
+    verifier("le message est écrit dans la file d'attente",
+             ligne["statut"] == "en_attente" and ligne["numero"] == "2250151740187",
+             str(ligne))
+
+    config.definir_parametre(db, "wa_token", "jeton-de-test")
+    config.definir_parametre(db, "wa_phone_number_id", "123456")
+    appels = []
+    original = W._requete
+
+    def faux_meta(url, token, corps=None, delai=20):
+        appels.append((url, corps))
+        return {"messages": [{"id": "wamid.TEST"}]}
+
+    W._requete = faux_meta
+    try:
+        res = W.envoyer(db, "0151740187", "Pax. Deuxième essai.")
+    finally:
+        W._requete = original
+    ligne = db.ligne("SELECT * FROM envois ORDER BY id DESC LIMIT 1")
+    verifier("avec configuration, l'envoi aboutit",
+             res.get("ok") is True and ligne["statut"] == "envoye", str(res))
+    verifier("l'appel part vers le bon numéro",
+             bool(appels) and appels[0][1]["to"] == "2250151740187", str(appels[:1]))
+    verifier("les messages longs sont découpés", len(W.decouper("Une phrase. " * 400)) > 1)
+    verifier("une erreur Meta est expliquée en français",
+             "Destinataires de test" in W.expliquer_erreur(131030))
+
+    config.definir_parametre(db, "wa_token", "")
+    config.definir_parametre(db, "wa_phone_number_id", "")
+
+
 def test_securite():
     print("\nSécurité")
     from hotellerie.securite import (hacher_mot_de_passe, verifier_mot_de_passe,
@@ -362,6 +403,7 @@ def main() -> int:
         test_garde_fous(db)
         test_connaissances(db)
         test_whatsapp()
+        test_whatsapp_file(db)
         test_securite()
         test_notification(db)
     finally:

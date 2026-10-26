@@ -336,6 +336,10 @@ class Handler(BaseHTTPRequestHandler):
             self._page(vues.parametres(db, utilisateur, self._csrf(), message, erreur))
             return
 
+        if chemin == "/whatsapp":
+            self._page(vues.whatsapp_page(db, utilisateur, self._csrf(), message, erreur))
+            return
+
         self._erreur(404, "Page introuvable.")
 
     # ------------------------------------------------------------------
@@ -486,6 +490,73 @@ class Handler(BaseHTTPRequestHandler):
             self._flash("/parametres", message="Paramètres enregistrés.")
             return
 
+        if chemin.startswith("/whatsapp/"):
+            action = chemin.rsplit("/", 1)[-1]
+
+            if action == "enregistrer":
+                for cle in vues.WHATSAPP_CLEFS:
+                    if cle not in self._post:
+                        continue
+                    valeur = self._post.get(cle, "")
+                    if cle in vues.WHATSAPP_SECRETS and valeur == vues.MASQUE:
+                        continue
+                    config.definir_parametre(db, cle, valeur.strip())
+                db.journal(acteur, "whatsapp_parametres", "")
+                self._flash("/whatsapp", message="Réglages WhatsApp enregistrés.")
+                return
+
+            if action == "verifier":
+                releve = whatsapp.diagnostic(db)
+                releve["horodatage"] = _maintenant()
+                config.definir_parametre(db, "wa_dernier_diagnostic",
+                                         json.dumps(releve, ensure_ascii=False))
+                db.journal(acteur, "whatsapp_diagnostic", "",
+                           "pret" if releve.get("pret") else "incomplet")
+                if releve.get("pret"):
+                    self._flash("/whatsapp", message="Compte joint chez Meta : WhatsApp est prêt.")
+                else:
+                    self._flash("/whatsapp",
+                                erreur="Le diagnostic n'est pas encore complet : lisez le relevé ci-dessous.")
+                return
+
+            if action == "tester":
+                numero = (self._post.get("numero") or "").strip()
+                texte = (self._post.get("message") or "").strip()
+                if not texte:
+                    self._flash("/whatsapp", erreur="Le message d'essai est vide.")
+                    return
+                resultat = whatsapp.envoyer(db, numero, texte)
+                config.definir_parametre(db, "wa_dernier_diagnostic", json.dumps({
+                    "horodatage": _maintenant(),
+                    "etapes": [{
+                        "etape": "Message d'essai vers " + (whatsapp.afficher_numero(numero) or "—"),
+                        "ok": bool(resultat.get("ok")),
+                        "detail": ("parti" if resultat.get("ok")
+                                   else (resultat.get("erreur") or "envoi impossible")),
+                    }],
+                    "compte": None,
+                }, ensure_ascii=False))
+                db.journal(acteur, "whatsapp_essai", whatsapp.normaliser_numero(numero),
+                           "envoye" if resultat.get("ok") else (resultat.get("erreur") or "")[:200])
+                if resultat.get("ok"):
+                    self._flash("/whatsapp", message="Message d'essai envoyé. Vérifiez votre téléphone.")
+                else:
+                    self._flash("/whatsapp", erreur=resultat.get("erreur") or "Envoi impossible.")
+                return
+
+            if action == "rejouer":
+                resultat = whatsapp.rejouer(db)
+                db.journal(acteur, "whatsapp_rejeu", str(resultat.get("envoyes", 0)),
+                           f"restants={resultat.get('restants', 0)}")
+                if resultat.get("envoyes"):
+                    self._flash("/whatsapp",
+                                message=f"{resultat['envoyes']} message(s) envoyé(s), "
+                                        f"{resultat.get('restants', 0)} encore en attente.")
+                else:
+                    self._flash("/whatsapp",
+                                erreur=resultat.get("erreur") or "Aucun message n'a pu partir.")
+                return
+
         self._erreur(404, "Action inconnue.")
 
     def _repondre_hote(self, acteur: str, dem) -> None:
@@ -498,7 +569,8 @@ class Handler(BaseHTTPRequestHandler):
         conf_wa = whatsapp.configuration(db)
         whatsapp_pret = bool(conf_wa.get("token") and conf_wa.get("phone_number_id"))
         if dem.get("telephone") and whatsapp_pret:
-            resultat = whatsapp.envoyer(db, dem["telephone"], texte)
+            resultat = whatsapp.envoyer(db, dem["telephone"], texte, demande_id=dem["id"],
+                                        conversation_id=dem.get("conversation_id") or "")
             canal, destinataire = "whatsapp", whatsapp.afficher_numero(dem["telephone"])
         elif dem.get("email"):
             # Sans WhatsApp configuré, le courriel reste un canal réel : on ne
@@ -506,7 +578,8 @@ class Handler(BaseHTTPRequestHandler):
             resultat = emailer.envoyer(db, dem["email"], sujet, texte)
             canal, destinataire = "email", dem["email"]
         elif dem.get("telephone"):
-            resultat = whatsapp.envoyer(db, dem["telephone"], texte)
+            resultat = whatsapp.envoyer(db, dem["telephone"], texte, demande_id=dem["id"],
+                                        conversation_id=dem.get("conversation_id") or "")
             canal, destinataire = "whatsapp", whatsapp.afficher_numero(dem["telephone"])
         else:
             resultat = {"ok": False, "ignore": True, "erreur": "aucun contact pour cet hôte"}
@@ -597,7 +670,8 @@ class Handler(BaseHTTPRequestHandler):
                                               telephone=message["de"],
                                               nom_contact=message.get("nom", ""))
             if reponse:
-                whatsapp.envoyer(db, message["de"], reponse)
+                whatsapp.envoyer(db, message["de"], reponse,
+                                 conversation_id=message["de"])
         self._repondre(200, b"ok", "text/plain; charset=utf-8")
 
     # ------------------------------------------------------------------

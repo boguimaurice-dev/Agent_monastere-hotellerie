@@ -13,6 +13,9 @@ Utilisation
     python run.py tester                  dialoguer avec l'agent dans le terminal
     python run.py importer                réimporter base_connaissances.json
     python run.py sauvegarde              copier la base dans un fichier daté
+    python run.py whatsapp                état du branchement WhatsApp
+    python run.py whatsapp --verifier     interroger Meta sur le compte
+    python run.py whatsapp --envoyer TEXTE --numero 0151740187
     python run.py secret                  générer un secret aléatoire
 
 Aucune dépendance à installer : bibliothèque standard Python 3.8+ uniquement.
@@ -188,6 +191,65 @@ def cmd_sauvegarde(args) -> int:
     return 0
 
 
+
+def cmd_whatsapp(args) -> int:
+    """Brancher, vérifier et éprouver WhatsApp depuis le terminal."""
+    from hotellerie.channels import whatsapp
+
+    db = base()
+    if not config.DB_PATH.exists():
+        cmd_initialiser(argparse.Namespace(demo=False))
+
+    if args.rejouer:
+        resultat = whatsapp.rejouer(db)
+        print(f"{resultat.get('envoyes', 0)} message(s) envoyé(s), "
+              f"{resultat.get('restants', 0)} encore en attente.")
+        if resultat.get("erreur"):
+            print(resultat["erreur"], file=sys.stderr)
+            return 1
+        return 0
+
+    if args.verifier:
+        releve = whatsapp.diagnostic(db, args.numero or "")
+        print("")
+        print("Diagnostic WhatsApp")
+        for etape in releve["etapes"]:
+            print(("  ✓ " if etape["ok"] else "  ✗ ") + etape["etape"] + " — " + etape["detail"])
+        compte = releve.get("compte") or {}
+        if compte:
+            print(f"  Compte : {compte.get('verified_name') or '—'} · "
+                  f"{compte.get('display_phone_number') or '—'} · "
+                  f"qualité {compte.get('quality_rating') or '—'}")
+        print("  Prêt : " + ("oui" if releve["pret"] else "non"))
+        return 0 if releve["pret"] else 1
+
+    if args.envoyer:
+        numero = args.numero or config.parametre(db, "wa_numero_test", "")
+        resultat = whatsapp.envoyer(db, numero, args.envoyer)
+        if resultat.get("ok"):
+            print(f"Message envoyé à {whatsapp.afficher_numero(numero)}.")
+            return 0
+        print("Message non envoyé : " + (resultat.get("erreur") or "motif inconnu"),
+              file=sys.stderr)
+        print("Il reste dans la file d'attente ; « run.py whatsapp --rejouer » le reprendra.")
+        return 1
+
+    conf = whatsapp.configuration(db)
+    file_attente = whatsapp.file_attente(db, 200)
+    print("")
+    print("WhatsApp — état du branchement")
+    print("  Jeton d'accès          : " + ("présent" if conf["token"] else "absent"))
+    print("  phone_number_id        : " + (conf["phone_number_id"] or "absent"))
+    print("  Jeton du webhook       : " + (conf["verify_token"] or "absent"))
+    print("  Secret d'application   : " + ("présent" if conf["app_secret"] else "absent"))
+    print("  Version de l'API       : " + (conf["version"] or "v21.0"))
+    print("  Numéro d'essai         : " + (whatsapp.afficher_numero(conf["numero_test"]) or "non renseigné"))
+    print("  URL publique           : " + (conf["site_url"] or "non renseignée"))
+    print(f"  File d'attente         : {len(file_attente)} message(s)")
+    print("  Diagnostic             : python3 run.py whatsapp --verifier")
+    return 0
+
+
 def cmd_secret(args) -> int:
     print(secrets.token_urlsafe(32))
     return 0
@@ -257,6 +319,13 @@ def main() -> int:
     s = sub.add_parser("sauvegarde", help="copier la base de données")
     s.add_argument("destination", nargs="?")
     s.set_defaults(func=cmd_sauvegarde)
+
+    s = sub.add_parser("whatsapp", help="brancher et éprouver WhatsApp (Meta Cloud API)")
+    s.add_argument("--verifier", action="store_true", help="interroger Meta sur le compte")
+    s.add_argument("--envoyer", metavar="TEXTE", help="envoyer un message d'essai")
+    s.add_argument("--numero", help="destinataire de l'essai")
+    s.add_argument("--rejouer", action="store_true", help="rejouer la file d'attente")
+    s.set_defaults(func=cmd_whatsapp)
 
     s = sub.add_parser("secret", help="générer un secret aléatoire")
     s.set_defaults(func=cmd_secret)

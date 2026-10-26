@@ -153,7 +153,20 @@ SCHEMA = [
     "CREATE INDEX IF NOT EXISTS idx_demandes_dates ON demandes (date_arrivee, date_depart)",
     "CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages (conversation_id)",
     "CREATE INDEX IF NOT EXISTS idx_notifications_demande ON notifications (demande_id)",
+    """CREATE TABLE IF NOT EXISTS envois (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        demande_id INTEGER,
+        conversation_id TEXT NOT NULL DEFAULT '',
+        numero TEXT NOT NULL,
+        corps TEXT NOT NULL,
+        statut TEXT NOT NULL DEFAULT 'en_attente',
+        erreur TEXT NOT NULL DEFAULT '',
+        tentatives INTEGER NOT NULL DEFAULT 0,
+        cree_le TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+        envoye_le TEXT
+    )""",
     "CREATE INDEX IF NOT EXISTS idx_journal_date ON journal (horodatage)",
+    "CREATE INDEX IF NOT EXISTS idx_envois_statut ON envois (statut, id)",
 ]
 
 

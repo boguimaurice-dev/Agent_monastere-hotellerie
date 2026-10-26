@@ -161,7 +161,7 @@ def notifier_hoteliers(db, demande_id, motif: str = "nouvelle_demande") -> dict:
 
     if dest["whatsapp"] and config.drapeau_parametre(db, "notifier_par_whatsapp", True):
         for numero in dest["whatsapp"]:
-            res = whatsapp.envoyer(db, numero, corps)
+            res = whatsapp.envoyer(db, numero, corps, demande_id=demande_id)
             _consigner(db, demande_id, "whatsapp", whatsapp.afficher_numero(numero), sujet,
                        _statut(res), res.get("erreur", ""))
             resultats.append({"canal": "whatsapp", "destinataire": numero, **res})
@@ -183,7 +183,7 @@ def _alerter(db, sujet, corps, conversation_id=None, demande_id=None) -> dict:
                    _statut(res), res.get("erreur", ""))
         resultats.append({"canal": "email", **res})
     for numero in dest["whatsapp"]:
-        res = whatsapp.envoyer(db, numero, corps)
+        res = whatsapp.envoyer(db, numero, corps, demande_id=demande_id)
         _consigner(db, demande_id, "whatsapp", whatsapp.afficher_numero(numero), sujet,
                    _statut(res), res.get("erreur", ""))
         resultats.append({"canal": "whatsapp", **res})

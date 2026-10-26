@@ -132,6 +132,7 @@ LIENS = [
     ("/notifications", "Notifications", "notifications"),
     ("/journal", "Journal", "journal"),
     ("/parametres", "Paramètres", "parametres"),
+    ("/whatsapp", "WhatsApp", "whatsapp"),
 ]
 
 

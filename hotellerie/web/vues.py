@@ -90,6 +90,11 @@ def tableau_de_bord(db, user, message: str = "", erreur: str = "") -> str:
     if relais:
         alertes.append(f'<div class="alerte alerte-ko">{len(relais)} échange(s) attendent un frère. '
                        f'<a href="/conversations">Prendre le relais</a></div>')
+    from ..channels import whatsapp as _wa
+    en_attente_wa = _wa.file_attente(db, 200)
+    if en_attente_wa:
+        alertes.append(f'<div class="alerte alerte-info">{len(en_attente_wa)} message(s) '
+                       f'WhatsApp attendent leur départ. <a href="/whatsapp">Voir la file</a></div>')
 
     lignes = [[_lien_demande(d), esc(_hote(d)), esc(d.get("provenance") or "—"),
                esc(_periode(d)), esc(d.get("nb_personnes") or 1),
@@ -735,3 +740,151 @@ def parametres(db, user, csrf: str, message: str = "", erreur: str = "") -> str:
 </form>
 """
     return page("Paramètres", contenu, user, "parametres", message, erreur)
+
+
+# ===========================================================================
+# WhatsApp
+# ===========================================================================
+WHATSAPP_CLEFS = ["wa_token", "wa_phone_number_id", "wa_verify_token", "wa_app_secret",
+                  "wa_api_version", "wa_numero_test", "site_url"]
+WHATSAPP_SECRETS = {"wa_token", "wa_app_secret"}
+
+
+def whatsapp_page(db, user, csrf: str, message: str = "", erreur: str = "") -> str:
+    from ..channels import whatsapp
+
+    conf = whatsapp.configuration(db)
+    pret = bool(conf["token"] and conf["phone_number_id"])
+    numero_essai = conf["numero_test"] or "2250151740187"
+    url_webhook = ((conf["site_url"] + "/webhook/whatsapp") if conf["site_url"]
+                   else "— (renseignez l'adresse publique ci-dessous)")
+
+    dernier = None
+    brut = config.parametre(db, "wa_dernier_diagnostic", "")
+    if brut:
+        try:
+            dernier = json.loads(brut)
+        except ValueError:
+            dernier = None
+
+    etapes_html = ""
+    if dernier and dernier.get("etapes"):
+        elements = []
+        for e in dernier["etapes"]:
+            marque = "✓" if e.get("ok") else "✗"
+            couleur = "color:#33502e" if e.get("ok") else "color:#7a2c20"
+            elements.append(f'<li><strong style="{couleur}">{marque} {esc(e.get("etape"))}</strong>'
+                            f' — {esc(e.get("detail"))}</li>')
+        etapes_html = (f'<p class="petit muted">Relevé du {esc(dernier.get("horodatage", ""))}</p>'
+                       f'<ul>{"".join(elements)}</ul>')
+        if dernier.get("compte"):
+            compte = dernier["compte"]
+            etapes_html += ("<p>Compte joint : <strong>" + esc(compte.get("verified_name") or "—")
+                            + "</strong> · numéro " + esc(compte.get("display_phone_number") or "—")
+                            + " · qualité " + esc(compte.get("quality_rating") or "—") + "</p>")
+    else:
+        etapes_html = '<p class="muted">Aucun relevé pour le moment. Cliquez sur « Vérifier le compte ».</p>'
+
+    file_attente = whatsapp.file_attente(db, 100)
+    derniers = whatsapp.derniers_envois(db, 12)
+    lignes = []
+    for e in derniers:
+        extrait = (e["corps"] or "").replace("\n", " ")
+        extrait = extrait[:90] + ("…" if len(extrait) > 90 else "")
+        lignes.append([esc((e["cree_le"] or "")[:16]),
+                       esc(whatsapp.afficher_numero(e["numero"]) or "—"),
+                       esc(extrait), badge(e["statut"]), esc(e["erreur"] or "—")])
+
+    def champ(cle, libelle, type_="text", valeur=None, placeholder=""):
+        v = config.parametre(db, cle, "") if valeur is None else valeur
+        if cle in WHATSAPP_SECRETS:
+            v = MASQUE if v else ""
+            html = (f'<input type="text" name="{cle}" value="{esc(v)}" autocomplete="off" '
+                    f'placeholder="(vide)">')
+        else:
+            html = (f'<input type="text" name="{cle}" value="{esc(v)}" '
+                    f'placeholder="{esc(placeholder)}">')
+        return f'<label for="{cle}">{esc(libelle)}</label>{html}'
+
+    guide = """<ol>
+  <li>Sur <strong>developers.facebook.com</strong>, créez une application de type
+      <em>Business</em>, puis ajoutez le produit <strong>WhatsApp</strong>.</li>
+  <li>Dans <strong>WhatsApp → API Setup</strong>, relevez le <em>Phone number ID</em>
+      et générez un <strong>jeton permanent</strong> (utilisateur système).</li>
+  <li>Ajoutez votre numéro <strong>0151740187</strong> dans
+      <strong>« Destinataires de test »</strong> (ou passez le numéro Business en production).</li>
+  <li>Dans <strong>Configuration → Webhook</strong>, collez l'adresse ci-dessous et le
+      jeton de vérification, puis abonnez-vous au champ <strong>messages</strong>.
+      L'adresse doit être en <strong>HTTPS public</strong> (Caddy devant le serveur).</li>
+  <li>Depuis votre téléphone, écrivez « Bonjour » au numéro WhatsApp Business :
+      l'agent répondra. C'est le test le plus fidèle, car Meta n'autorise un message
+      libre que dans les 24 h qui suivent un message de l'hôte.</li>
+</ol>"""
+
+    if pret:
+        bandeau = "WhatsApp est configuré : le webhook peut recevoir les messages."
+    else:
+        bandeau = ("WhatsApp n’est pas encore configuré : les réponses restent dans la "
+                   "file d’attente, rien n’est perdu.")
+    if file_attente:
+        bandeau += f" — {len(file_attente)} message(s) en attente."
+
+    contenu = f"""
+<h1>Brancher WhatsApp</h1>
+<p class="sous-titre">Meta Cloud API — le numéro de l'hôtellerie répond aux hôtes, 24 h/24.</p>
+<div class="alerte {"alerte-ok" if pret else "alerte-info"}">
+  {esc(bandeau)}
+</div>
+<div class="grille grille-2">
+  {carte("Réglages Meta", f'''<form method="post" action="/whatsapp/enregistrer">
+    {_csrf(csrf)}
+    {champ("wa_token", "Jeton d'accès permanent")}
+    {champ("wa_phone_number_id", "Phone number ID")}
+    {champ("wa_verify_token", "Jeton de vérification du webhook")}
+    {champ("wa_app_secret", "Secret de l'application (signature)")}
+    {champ("wa_api_version", "Version de l'API", placeholder="v21.0")}
+    {champ("site_url", "Adresse publique du tableau de bord", placeholder="https://hotellerie.exemple.org")}
+    {champ("wa_numero_test", "Numéro d'essai", valeur=numero_essai)}
+    <div class="barre-actions">
+      <button class="btn" type="submit">Enregistrer</button>
+    </div>
+    <p class="petit muted">Les secrets s'affichent masqués : les laisser tels quels ne les change pas.</p>
+  </form>''')}
+  {carte("Adresse à déclarer dans Meta", f'''<dl class="fiche">
+    <dt>URL du webhook</dt><dd class="mono">{esc(url_webhook)}</dd>
+    <dt>Jeton de vérification</dt><dd class="mono">{esc(conf.get("verify_token") or "—")}</dd>
+    <dt>Champ à s'abonner</dt><dd class="mono">messages</dd>
+  </dl>
+  <form method="post" action="/whatsapp/verifier" class="barre-actions">
+    {_csrf(csrf)}
+    <button class="btn" type="submit">Vérifier le compte chez Meta</button>
+  </form>
+  <p class="petit muted">Vérifie le jeton et le numéro en interrogeant graph.facebook.com.</p>''')}
+</div>
+{carte("Relevé du diagnostic", etapes_html)}
+<div class="grille grille-2">
+  {carte("Envoyer un message d'essai", f'''<form method="post" action="/whatsapp/tester">
+    {_csrf(csrf)}
+    <label for="numero">Destinataire</label>
+    <input type="text" id="numero" name="numero" value="{esc(numero_essai)}">
+    <p class="petit muted">Format international : +225 01 51 74 01 87.</p>
+    <label for="message_essai">Message</label>
+    <textarea id="message_essai" name="message" style="min-height:90px">Pax. Ceci est un message d'essai de l'hôtellerie du Monastère Sainte-Marie de Bouaké. Que Dieu vous garde.</textarea>
+    <div class="barre-actions"><button class="btn" type="submit">Envoyer l'essai</button></div>
+    <p class="petit muted">Si Meta refuse avec le code 131047, écrivez d'abord
+    « Bonjour » au numéro Business depuis votre téléphone : la fenêtre de 24 h s'ouvrira.</p>
+  </form>''')}
+  {carte("File d'attente", f'''<p>{len(file_attente)} message(s) en attente de départ.</p>
+  <form method="post" action="/whatsapp/rejouer">
+    {_csrf(csrf)}
+    <button class="btn" type="submit">Rejouer la file</button>
+  </form>
+  <p class="petit muted">Chaque message est écrit en base avant l'envoi : une coupure
+  de réseau ou un jeton absent ne fait perdre aucune parole.</p>''')}
+</div>
+{carte("Derniers messages WhatsApp", tableau(
+    ["Date", "Destinataire", "Message", "Statut", "Motif"], lignes,
+    "Aucun message pour le moment."))}
+{carte("Ce qu'il faut faire dans Meta", guide)}
+"""
+    return page("WhatsApp", contenu, user, "whatsapp", message, erreur)

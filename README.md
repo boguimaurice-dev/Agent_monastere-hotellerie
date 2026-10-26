@@ -74,6 +74,10 @@ python3 run.py servir --port 8080     # démarrer le serveur
 python3 run.py initialiser [--demo]   # (ré)initialiser la base
 python3 run.py utilisateur --login X  # créer ou modifier un compte
 python3 run.py tester                 # dialoguer avec l'agent dans le terminal
+python3 run.py whatsapp               # état du branchement WhatsApp
+python3 run.py whatsapp --verifier    # interroger Meta sur le compte
+python3 run.py whatsapp --envoyer "Pax. Essai" --numero 0151740187
+python3 run.py whatsapp --rejouer     # rejouer la file d'attente
 python3 run.py importer [--ecraser]   # réimporter base_connaissances.json
 python3 run.py sauvegarde [dossier]   # copier la base avec la date du jour
 python3 run.py secret                 # générer un secret aléatoire
@@ -88,7 +92,7 @@ de le brancher sur WhatsApp. Aucun message n'est envoyé pour de vrai.
 python3 tests.py
 ```
 
-73 vérifications couvrent ce qui ne doit jamais se dérégler : la compréhension
+79 vérifications couvrent ce qui ne doit jamais se dérégler : la compréhension
 des dates et des noms en français courant, la conduite du dialogue, les
 garde-fous (aucun prix inventé, aucune consigne interne divulguée, urgence
 traitée), le calcul des disponibilités, la sécurité et le webhook.
@@ -114,42 +118,76 @@ touchées**. À relancer après chaque modification de la base de connaissances.
 > demandera de le migrer vers l'API Cloud. Les messages déjà présents sur le
 > téléphone ne sont pas transférés. Prévoyez cette bascule avec les frères.
 
-### 4.2 Renseigner les paramètres
+### 4.2 Renseigner les paramètres — l'écran « WhatsApp »
 
-Ouvrir `Paramètres` dans le tableau de bord et remplir :
+Le tableau de bord a un écran dédié, **WhatsApp**, dans le menu. Il sert à
+enregistrer les réglages, à **vérifier le compte chez Meta** et à **envoyer un
+message d'essai**. C'est là que tout se joue, sans ligne de commande.
 
 | Paramètre | Valeur |
 |---|---|
 | `wa_token` | le jeton d'accès permanent |
 | `wa_phone_number_id` | l'identifiant du numéro |
-| `wa_verify_token` | un mot de passe de votre choix (ex. `pax-bouake-2026`) |
+| `wa_verify_token` | le mot de passe du webhook (défaut : `monastere-bouake`) |
 | `wa_app_secret` | le secret de l'application (vérification de signature) |
-| `hoteliers_whatsapp` | les numéros des frères, séparés par des virgules |
+| `wa_api_version` | version de l'API (défaut `v21.0`) |
+| `wa_numero_test` | le numéro qui reçoit les essais (défaut `2250151740187`) |
+| `site_url` | l'adresse publique HTTPS du tableau de bord |
 
 Les valeurs sont conservées dans la base, sauf si une variable
 d'environnement du même nom existe (celle-ci garde la priorité). Un fichier
 `.env` est également lu au démarrage — voir `.env.example`.
+
+Le bouton **Vérifier le compte** interroge `graph.facebook.com` et affiche, en
+français, ce qui manque : jeton expiré (190), numéro non autorisé en mode test
+(131030), fenêtre de 24 h fermée (131047)… Le bouton **Envoyer l'essai** écrit
+au numéro d'essai.
 
 ### 4.3 Déclarer le webhook
 
 Dans la configuration WhatsApp de Meta :
 
 - **URL de rappel** : `https://votre-serveur/webhook/whatsapp`
-- **Jeton de vérification** : celui choisi ci-dessus
+- **Jeton de vérification** : celui choisi ci-dessus (`monastere-bouake` par défaut)
 - **Champs abonnés** : cocher **messages**
 
-L'URL doit être en **HTTPS** : Meta l'exige. Voir la section 6 pour les
-options d'hébergement.
+L'adresse exacte est affichée dans l'écran « WhatsApp » dès que `site_url` est
+renseignée. Meta exige **HTTPS** : voir la section 6 pour l'hébergement.
 
-### 4.4 Vérifier
+**Pour essayer tout de suite, sans nom de domaine**, un tunnel suffit :
 
-Depuis un téléphone, écrivez au numéro. Le message doit apparaître dans
-« Échanges » puis dans « Demandes ». Consultez « Notifications » pour voir
-l'accusé d'envoi ; en cas d'échec, le motif y est consigné.
+```bash
+./deploiement/tunnel.sh        # affiche une adresse https://….trycloudflare.com
+```
 
-**Tant que le jeton n'est pas configuré, rien n'est envoyé** : l'application
-fonctionne normalement, les réponses sont simplement consignées dans la base
-au lieu de partir. Cela permet de tester tout le reste hors ligne.
+Déclarer `<adresse-affichée>/webhook/whatsapp` dans Meta. Le tunnel ne dure
+que le temps du terminal : c'est fait pour l'essai, pas pour la production.
+
+### 4.4 Vérifier — le parcours d'essai (numéro 0151740187)
+
+1. Dans l'application Meta, ajouter **0151740187** aux « Destinataires de test ».
+2. Depuis ce téléphone, écrire « Bonjour » au numéro WhatsApp Business.
+3. L'agent répond dans la conversation ; l'échange apparaît dans « Échanges ».
+4. En cas d'échec, le motif est lisible dans « WhatsApp » (derniers messages) et
+   dans « Notifications ».
+
+Meta n'autorise un message libre que dans les **24 heures** qui suivent un
+message de l'hôte. D'où l'étape 2 : le code d'erreur 131047 signifie exactement
+« la fenêtre est fermée ». Pour écrire le premier, il faudrait un modèle
+(template) validé par Meta.
+
+### 4.5 La file d'attente : rien ne se perd
+
+Chaque message WhatsApp est **écrit en base avant l'envoi** (table `envois`).
+Sans jeton, sans réseau, ou après un refus de Meta, il reste `en_attente` et
+repart avec le bouton « Rejouer la file » ou :
+
+```bash
+python3 run.py whatsapp --rejouer
+```
+
+C'est le principe T2 du cahier des charges : un service absent est un
+supplément qui manque, jamais une parole perdue.
 
 ---
 
@@ -196,15 +234,18 @@ sudo cp deploiement/hotellerie.service /etc/systemd/system/
 sudo systemctl enable --now hotellerie
 ```
 
-Pour l'exposer en HTTPS, placer un reverse proxy (Caddy, le plus simple) :
+Pour l'exposer en HTTPS, placer un reverse proxy (Caddy, le plus simple).
+Un `Caddyfile` prêt à copier est fourni :
 
-```
-hotellerie.monastere.ci {
-    reverse_proxy 127.0.0.1:8080
-}
+```bash
+sudo cp deploiement/Caddyfile /etc/caddy/Caddyfile
+sudo systemctl reload caddy
 ```
 
-Caddy obtient et renouvelle le certificat automatiquement.
+Il suffit d'y remplacer `hotellerie.exemple.org` par le nom de domaine réel.
+Caddy obtient et renouvelle le certificat automatiquement. Sans cette adresse
+HTTPS, Meta refusera le webhook : c'est la seule pièce que la maison doit
+fournir (un nom de domaine, ou un VPS avec Caddy).
 
 ### 6.2 Chez un hébergeur (VPS)
 
@@ -267,7 +308,7 @@ serveur et sa sauvegarde s'ils sont dans la même pièce.
 ```
 monastere-hotellerie/
 ├── run.py                    point d'entrée (ligne de commande)
-├── tests.py                  73 vérifications automatiques
+├── tests.py                  79 vérifications automatiques
 ├── base_connaissances.json   le « cerveau » de l'agent, éditable
 ├── README.md                 ce fichier
 ├── SPECIFICATION.md          cahier des charges complet
@@ -275,7 +316,9 @@ monastere-hotellerie/
 ├── .env.example              modèle de configuration
 ├── Dockerfile                déploiement en conteneur
 ├── deploiement/
-│   └── hotellerie.service    unité systemd
+│   ├── hotellerie.service    unité systemd
+│   ├── Caddyfile             HTTPS automatique (webhook Meta)
+│   └── tunnel.sh             tunnel HTTPS d'essai (cloudflared)
 ├── data/                     la base SQLite et les journaux (à sauvegarder)
 └── hotellerie/
     ├── config.py             paramètres (env > base > défaut)
@@ -305,7 +348,7 @@ monastere-hotellerie/
 
 | Symptôme | Cause probable | Remède |
 |---|---|---|
-| L'agent ne répond pas sur WhatsApp | `wa_token` ou `wa_phone_number_id` vide | « Paramètres », puis « Notifications » pour lire le motif d'échec |
+| L'agent ne répond pas sur WhatsApp | `wa_token` ou `wa_phone_number_id` vide | Écran « WhatsApp » : « Vérifier le compte », puis « Rejouer la file » |
 | Le webhook renvoie 403 | Jeton de vérification différent | Le même mot de passe des deux côtés |
 | Page blanche après une action | Session expirée | Se reconnecter |
 | « La base est occupée » | Deux instances lancées | Arrêter le doublon |
