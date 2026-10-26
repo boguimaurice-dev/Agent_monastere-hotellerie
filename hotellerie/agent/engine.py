@@ -99,6 +99,8 @@ class Agent:
         if d.get("demande_id") and C.extraire_annulation(texte):
             metier.changer_statut(self.db, d["demande_id"], "annulee", "hote")
             return prompts.ANNULATION, "annule"
+        if C.extraire_annulation(texte):
+            return prompts.ANNULATION_SANS_DOSSIER, etape
 
         # 4. Le récapitulatif attend une réponse claire.
         if etape == "recap":
@@ -164,7 +166,12 @@ class Agent:
         # 10. On avance, sans jamais redemander ce qui est déjà donné.
         d["relances"] = 0
         d["etape"] = prochain
-        return self._avec_reconnaissance(prochain, d, question_suivante), prochain
+        reponse = self._avec_reconnaissance(prochain, d, question_suivante)
+        # Une question glissée dans une demande de séjour reçoit sa réponse,
+        # puis l'agent reprend sa conduite : on n'oblige pas l'hôte à choisir.
+        if question:
+            reponse = self._question(texte, conv) + "\n\n" + reponse
+        return reponse, prochain
 
     # =====================================================================
     # Collecte

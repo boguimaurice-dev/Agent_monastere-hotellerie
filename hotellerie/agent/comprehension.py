@@ -50,6 +50,15 @@ MOTS_VIDES = {
     "desole", "desolee", "content", "contente", "interesse", "interessee",
 }
 
+# Verbes et tournures qui montrent une phrase, jamais un nom de personne :
+# « Nous venons de Korhogo » ne doit pas donner l'hôte « Venons ».
+VERBES_REFUS = {
+    "venons", "viens", "venait", "sommes", "arrivons", "habitons", "residons",
+    "voudrions", "voudrais", "voulons", "souhaitons", "cherchons", "cherche",
+    "preparer", "preparons", "organiser", "participer", "annuler", "annulons",
+    "pouvons", "peux", "pouvons", "aimerions", "desirons", "esperons",
+}
+
 
 # ---------------------------------------------------------------------------
 # Outils de texte
@@ -62,7 +71,9 @@ def _preparer(texte: str) -> str:
     """
     t = (texte or "").lower()
     t = re.sub(r"\bqu['’]", "qu ", t)
-    t = re.sub(r"\b([dljmtnsc])['’]", r"\1 ", t)
+    t = re.sub(r"\b([dljmtsc])['’]", r"\1 ", t)
+    # « n'est », « n'a » : élision. Mais « N'Guessan », « N'Dri » : un nom.
+    t = re.sub(r"\bn['’](?=(?:est|a|en|y|ont|avait|aurait|etait|aura|aie)\b)", "n ", t)
     t = t.replace("'", "").replace("’", "")
     t = unicodedata.normalize("NFD", t)
     t = "".join(c for c in t if unicodedata.category(c) != "Mn")
@@ -74,8 +85,38 @@ def _mots(texte: str) -> list:
     return [m for m in re.split(r"[^a-z0-9]+", _preparer(texte)) if m]
 
 
+def _restaurer_expression(retenus, texte_original: str) -> str:
+    """Restitue une expression telle qu'elle a été écrite : « San-Pédro »."""
+    mots = re.findall(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'’\-]*", texte_original or "")
+    cible = " ".join(retenus)
+    # De un à n mots : « San-Pédro » est un seul mot, « San Pedro » en est deux.
+    for taille in range(1, len(retenus) + 1):
+        for i in range(0, max(0, len(mots) - taille + 1)):
+            fenetre = mots[i:i + taille]
+            essai = " ".join(_preparer(m).replace("-", " ") for m in fenetre)
+            if essai == cible:
+                return " ".join(fenetre)
+    return " ".join(_restaurer(j, texte_original) for j in retenus)
+
+
 def _jolie(mot: str) -> str:
     return mot[:1].upper() + mot[1:] if mot else ""
+
+
+def _restaurer(valeur: str, texte_original: str) -> str:
+    """Rend aux mots leurs accents d'origine : « Bouake » → « Bouaké ».
+
+    La compréhension travaille sans accents (c'est plus robuste), mais ce que
+    lit un frère doit être écrit correctement : c'est le nom d'une ville, pas
+    une approximation.
+    """
+    if not valeur or not texte_original:
+        return _jolie(valeur) if valeur and valeur.islower() else valeur
+    cible = _preparer(valeur)
+    for mot in re.findall(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'’\-]*", texte_original):
+        if _preparer(mot) == cible:
+            return mot[:1].upper() + mot[1:]
+    return _jolie(valeur) if valeur.islower() else valeur
 
 
 # ===========================================================================
@@ -115,6 +156,7 @@ def _duree(texte: str):
         (r"\btrois\s+semaines\b", 21),
         (r"\bdeux\s+semaines\b", 14),
         (r"\bune?\s+semaine\b", 7),
+        (r"\b(?:la|cette)\s+semaine\s+(?:du|de)\b", 7),
         (r"\bquinze\s+jours\b", 15),
         (r"\bun\s+week\s*end\b", 2),
         (r"\bune?\s+nuit\b", 1),
@@ -225,6 +267,8 @@ def extraire_identite(texte: str, attendu: bool = False):
     candidat = morceaux[0] if morceaux else ""
 
     jetons = [j for j in re.split(r"[^a-z]+", candidat) if j]
+    if any(j in VERBES_REFUS for j in jetons):
+        return "", ""
     retenus = []
     for j in jetons:
         if len(j) < 2 or j in MOTS_VIDES or j.isdigit():
@@ -233,8 +277,8 @@ def extraire_identite(texte: str, attendu: bool = False):
     if not retenus or len(retenus) > 3:
         return "", ""
     if len(retenus) == 1:
-        return _jolie(retenus[0]), ""
-    return _jolie(retenus[-1]), _jolie(retenus[0])
+        return _restaurer(retenus[0], texte), ""
+    return _restaurer(retenus[-1], texte), _restaurer(retenus[0], texte)
 
 
 def extraire_provenance(texte: str, attendu: bool = False) -> str:
@@ -243,6 +287,9 @@ def extraire_provenance(texte: str, attendu: bool = False) -> str:
     t = _preparer(brut)
     if not t:
         return ""
+    # Le pays est un cas à part : « Côte d'Ivoire » ne doit pas finir en « Ivoire ».
+    if re.search(r"\bivoire\b", t):
+        return "Côte d'Ivoire"
     candidat = ""
     m = re.search(r"(?:je viens|nous venons|j arrive|nous arrivons|je suis|nous sommes"
                   r"|j habite|nous habitons|je reside|nous residons|originaire)\s+(.+)$", t)
@@ -253,13 +300,16 @@ def extraire_provenance(texte: str, attendu: bool = False) -> str:
         m2 = re.search(r"\b(?:d'|de |du |des |depuis )([A-Z\u00c0-\u017f][\w\u00c0-\u017f'\-]+"
                        r"(?:\s+[A-Z\u00c0-\u017f][\w\u00c0-\u017f'\-]+)?)", brut)
         if m2:
-            return _jolie(_preparer(m2.group(1)).strip())
+            return _restaurer(_preparer(m2.group(1)).strip(), m2.group(1))
         if attendu:
             candidat = t
     if not candidat:
         return ""
 
     candidat = candidat.strip(" .,;!?")
+    # On reste dans la première proposition : « je suis Aya Koffi d'Abidjan,
+    # je voudrais venir… » ne doit pas transformer la suite en ville.
+    candidat = candidat.split(",")[0].strip()
     morceaux = re.split(r"\b(?:d|de|du|des|depuis|a|au|aux|en|pour|avec|et|qui|que)\b", candidat)
     morceaux = [x.strip() for x in morceaux if x.strip()]
     candidat = morceaux[-1] if morceaux else ""
@@ -271,7 +321,7 @@ def extraire_provenance(texte: str, attendu: bool = False) -> str:
         retenus.append(j)
     if not retenus or len(retenus) > 4:
         return ""
-    return " ".join(_jolie(j) for j in retenus)
+    return _restaurer_expression(retenus, brut)
 
 
 def extraire_nombre_personnes(texte: str):
@@ -284,10 +334,20 @@ def extraire_nombre_personnes(texte: str):
     if re.search(r"\bun couple\b|\bnous sommes deux\b|\bnous deux\b|\bmon epouse\b"
                  r"|\bmon mari\b|\bma femme\b|\bma femme et moi\b", t):
         return 2
-    m = re.search(r"\b(\d{1,3})\s*(?:personnes?|pax|hotes?|adultes?|participants?|membres?"
+    m = re.search(r"\b(\d{1,3}|un|une|deux|trois|quatre|cinq|six|sept|huit|neuf|dix"
+                  r"|onze|douze|treize|quatorze|quinze|seize|vingt)\s*"
+                  r"(?:personnes?|pax|hotes?|adultes?|participants?|membres?"
                   r"|eleves?|etudiants?|retraitants?|places?)\b", t)
     if m:
-        return int(m.group(1))
+        valeur = m.group(1)
+        return int(valeur) if valeur.isdigit() else NOMBRES.get(valeur)
+    # « pour deux », « nous serons trois » : le nombre sans le mot « personne ».
+    m = re.search(r"\b(?:pour|nous serons|on sera|serons)\s+"
+                  r"(\d{1,3}|un|une|deux|trois|quatre|cinq|six|sept|huit|neuf|dix"
+                  r"|onze|douze|quinze|vingt)\b(?!\s*(?:nuits?|jours?|semaines?|mois))", t)
+    if m:
+        valeur = m.group(1)
+        return int(valeur) if valeur.isdigit() else NOMBRES.get(valeur)
     m = re.search(r"\b(?:groupe|equipe|paroisse|delegation|nous sommes|on sera|nous serons"
                   r"|on est|nous etions|serons)\s+(?:de\s+|a\s+)?([a-z]+|\d{1,3})\b", t)
     if m:
@@ -366,8 +426,11 @@ def est_demande_sejour(texte: str) -> bool:
     if not t:
         return False
     if re.search(r"\b(savoir|renseignement|renseignements|information|informations|connaitre)\b", t) \
-            and not re.search(r"\b(venir|sejourner|reserver|dormir)\b", t):
+            and not re.search(r"\b(venir|sejourner|reserver|dormir|preparer|organiser)\b", t):
         return False
+    if re.search(r"\b(preparer|organiser)\s+(?:une\s+|un\s+|mon\s+|notre\s+)?"
+                 r"(retraite|sejour|venue|session|temps)\b", t):
+        return True
     if re.search(r"\b(venir en retraite|faire une retraite|venir pour une retraite|retraite spirituelle)\b", t):
         return True
     if re.search(r"\b(reserver|reservation|demande de sejour|disponibilite|une chambre libre"
@@ -421,9 +484,11 @@ def demande_humain(texte: str) -> bool:
     t = _preparer(texte)
     return bool(re.search(
         r"(parler a un (pere|frere|moine)|parler avec un (pere|frere|moine)"
-        r"|joindre un (pere|frere|moine)|un (pere|frere) peut|etre rappele"
+        r"|parler aux (peres|freres|moines)|parler avec les (peres|freres)"
+        r"|joindre un (pere|frere|moine)|joindre les (peres|freres)"
+        r"|un (pere|frere) peut|etre rappele|qu on me rappelle"
         r"|rappeler|appeler les freres|contacter les freres|un humain|une personne reelle"
-        r"|le pere prieur|le pere abbe|voir un pretre|parler a quelqu un)", t))
+        r"|le pere prieur|le pere abbe|voir un pretre|voir un frere|parler a quelqu un)", t))
 
 
 def est_confirmation(texte: str) -> bool:

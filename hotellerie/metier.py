@@ -383,6 +383,8 @@ def occupation_mois(db, annee: int, mois: int) -> dict:
                 "type": "sejour", "reference": d["reference"], "demande_id": d["id"],
                 "nom": f"{d['prenom']} {d['nom']}".strip(),
                 "statut": d["statut"],
+                "arrivee": iso(d["date_arrivee"]),
+                "depart": iso(d["date_depart"]),
             }
             jour += dt.timedelta(days=1)
 

@@ -1,0 +1,737 @@
+# -*- coding: utf-8 -*-
+"""
+Les écrans du tableau de bord.
+
+Chaque fonction renvoie du HTML complet. Toute donnée affichée est échappée :
+un nom d'hôte vient d'un inconnu, il ne doit jamais pouvoir devenir du code.
+"""
+from __future__ import annotations
+
+import datetime as dt
+import json
+import urllib.parse
+
+from .. import config, knowledge, metier
+from .templates import badge, carte, esc, page, tableau
+
+
+def _csrf(jeton: str) -> str:
+    return f'<input type="hidden" name="csrf" value="{esc(jeton)}">'
+
+
+def _hote(dem) -> str:
+    return f"{dem.get('prenom', '')} {dem.get('nom', '')}".strip() or "—"
+
+
+def _lien_demande(dem) -> str:
+    return f'<a href="/demandes/{dem["id"]}">{esc(dem.get("reference") or dem["id"])}</a>'
+
+
+def _periode(dem) -> str:
+    if not dem.get("date_arrivee"):
+        return "—"
+    if not dem.get("date_depart"):
+        return f"dès le {metier.format_date(dem['date_arrivee'])}"
+    return (f"{metier.format_date(dem['date_arrivee'])} → "
+            f"{metier.format_date(dem['date_depart'])}")
+
+
+# ===========================================================================
+# Connexion
+# ===========================================================================
+def connexion(message: str = "", erreur: str = "") -> str:
+    contenu = f"""
+<div style="max-width: 420px; margin: 40px auto;">
+  <h1>Entrer dans la maison</h1>
+  <p class="sous-titre">Tableau de bord de l'hôtellerie</p>
+  <form method="post" action="/connexion" class="carte">
+    <label for="login">Identifiant</label>
+    <input type="text" id="login" name="login" autocomplete="username" required autofocus>
+    <label for="motdepasse">Mot de passe</label>
+    <input type="password" id="motdepasse" name="motdepasse" autocomplete="current-password" required>
+    <div class="barre-actions"><button class="btn" type="submit">Entrer</button></div>
+  </form>
+  <p class="petit muted">Six tentatives au maximum, puis quinze minutes d'attente.
+  Les mots de passe ne sont jamais conservés en clair.</p>
+</div>"""
+    return page("Connexion", contenu, message=message, erreur=erreur)
+
+
+# ===========================================================================
+# Tableau de bord
+# ===========================================================================
+def tableau_de_bord(db, user, message: str = "", erreur: str = "") -> str:
+    s = metier.stats(db)
+    manquantes = len(knowledge.fiches_a_completer(db))
+    relais = db.lignes(
+        "SELECT * FROM conversations WHERE humain_requis = 1 ORDER BY maj DESC LIMIT 5")
+    en_attente = db.lignes(
+        "SELECT * FROM demandes WHERE statut = 'en_attente' ORDER BY date_arrivee LIMIT 8")
+    auj = metier.aujourdhui().isoformat()
+    arrivees = db.lignes(
+        "SELECT * FROM demandes WHERE date_arrivee = ? AND statut IN ('acceptee','confirmee')", (auj,))
+    departs = db.lignes(
+        "SELECT * FROM demandes WHERE date_depart = ? AND statut IN ('acceptee','confirmee')", (auj,))
+
+    cartes = f"""<div class="grille grille-4">
+  <div class="carte"><div class="chiffre">{s['en_attente']}<small>Demandes en attente</small></div></div>
+  <div class="carte"><div class="chiffre">{s['arrivees_jour']}<small>Arrivées aujourd'hui</small></div></div>
+  <div class="carte"><div class="chiffre">{s['departs_jour']}<small>Départs aujourd'hui</small></div></div>
+  <div class="carte"><div class="chiffre">{s['chambres_actives']}<small>Chambres actives ({s['capacite_totale']} places)</small></div></div>
+</div>"""
+
+    alertes = []
+    if manquantes:
+        alertes.append(f'<div class="alerte alerte-info">{manquantes} fiche(s) de connaissance '
+                       f'attendent la parole des frères. <a href="/connaissances?manquantes=1">Les voir</a></div>')
+    if s["notifications_echouees"]:
+        alertes.append(f'<div class="alerte alerte-info">{s["notifications_echouees"]} transmission(s) '
+                       f'non partie(s). <a href="/notifications">Voir le motif</a></div>')
+    if relais:
+        alertes.append(f'<div class="alerte alerte-ko">{len(relais)} échange(s) attendent un frère. '
+                       f'<a href="/conversations">Prendre le relais</a></div>')
+
+    lignes = [[_lien_demande(d), esc(_hote(d)), esc(d.get("provenance") or "—"),
+               esc(_periode(d)), esc(d.get("nb_personnes") or 1),
+               esc(metier.nature(d.get("type_sejour"))),
+               badge(d.get("statut"), metier.libelle_statut(d.get("statut")))]
+              for d in en_attente]
+
+    systeme = []
+    systeme.append("Agent : " + ("actif" if config.drapeau_parametre(db, "agent_actif", True) else "en relais humain"))
+    wa = bool(config.parametre(db, "wa_token", "") and config.parametre(db, "wa_phone_number_id", ""))
+    systeme.append("WhatsApp : " + ("configuré" if wa else "non configuré (les messages ne partent pas)"))
+    smtp = bool(config.parametre(db, "smtp_hote", ""))
+    systeme.append("Courriel : " + ("configuré" if smtp else "non configuré"))
+    ia = config.drapeau_parametre(db, "ia_active", False) and bool(
+        config.parametre(db, "ia_cle_api", "") or config.env("OPENAI_API_KEY") or config.env("IA_CLE_API"))
+    systeme.append("Module de langage : " + ("activé" if ia else "désactivé (agent déterministe)"))
+
+    etat_html = ("<ul>" + "".join(f"<li>{esc(x)}</li>" for x in systeme) + "</ul>"
+                 + f'<p class="petit muted">Version {esc(config.VERSION)} · '
+                   '<a href="/sante">santé technique (JSON)</a> · '
+                   "<a href=\"/simulateur\">essayer l’agent</a></p>")
+    contenu = f"""
+<h1>Tableau de bord</h1>
+<p class="sous-titre">Bienvenue, {esc(user.get('nom') or user.get('login'))}. Voici l'état de la maison aujourd'hui.</p>
+{''.join(alertes)}
+{cartes}
+{carte("Demandes en attente de discernement",
+       tableau(["Référence", "Hôte", "Provenance", "Période", "Pers.", "Nature", "Statut"],
+               lignes, "Aucune demande en attente. La maison est en paix."),
+       '<div class="barre-actions"><a class="btn btn-secondaire" href="/demandes?statut=en_attente">Toutes les demandes</a>'
+       '<a class="btn" href="/demandes/nouveau">Saisir une demande</a></div>')}
+<div class="grille grille-2">
+  {carte("Arrivées du jour", tableau(["Hôte", "Chambre", "Période"],
+      [[esc(_hote(d)), esc((metier.chambre(db, d.get('chambre_id')) or {}).get('nom') or 'à attribuer'), esc(_periode(d))] for d in arrivees],
+      "Aucune arrivée aujourd'hui."))}
+  {carte("Départs du jour", tableau(["Hôte", "Chambre", "Période"],
+      [[esc(_hote(d)), esc((metier.chambre(db, d.get('chambre_id')) or {}).get('nom') or '—'), esc(_periode(d))] for d in departs],
+      "Aucun départ aujourd'hui."))}
+</div>
+{carte("État du système", etat_html)}
+"""
+    return page("Tableau de bord", contenu, user, "bord", message, erreur)
+
+
+# ===========================================================================
+# Demandes
+# ===========================================================================
+def demandes_liste(db, user, statut: str = "", recherche: str = "",
+                   message: str = "", erreur: str = "") -> str:
+    liste = metier.demandes(db, statut=statut, recherche=recherche)
+    lignes = [[_lien_demande(d), esc(_hote(d)), esc(d.get("provenance") or "—"),
+               esc(_periode(d)), esc(d.get("nb_personnes") or 1),
+               esc(metier.nature(d.get("type_sejour"))),
+               badge(d.get("statut"), metier.libelle_statut(d.get("statut"))),
+               esc((d.get("cree_le") or "")[:10])] for d in liste]
+    options = '<option value="">Tous les statuts</option>' + "".join(
+        f'<option value="{esc(c)}" {"selected" if c == statut else ""}>{esc(l)}</option>'
+        for c, l in metier.STATUTS.items())
+    contenu = f"""
+<h1>Demandes</h1>
+<p class="sous-titre">{len(liste)} demande(s) affichée(s).</p>
+{carte("", f'''<form method="get" action="/demandes" class="ligne">
+  <div><label for="q">Recherche</label><input type="text" id="q" name="q" value="{esc(recherche)}" placeholder="nom, référence, provenance…"></div>
+  <div><label for="statut">Statut</label><select id="statut" name="statut">{options}</select></div>
+  <div style="align-self:end"><button class="btn" type="submit">Filtrer</button></div>
+</form>''')}
+{carte("", tableau(["Référence", "Hôte", "Provenance", "Période", "Pers.", "Nature", "Statut", "Reçue"],
+      lignes, "Aucune demande ne correspond."),
+      '<div class="barre-actions"><a class="btn" href="/demandes/nouveau">Saisir une demande</a>'
+      '<a class="btn btn-secondaire" href="/demandes/export.csv">Export CSV</a></div>')}
+"""
+    return page("Demandes", contenu, user, "demandes", message, erreur)
+
+
+def demande_nouvelle(db, user, csrf: str, valeurs=None, message: str = "",
+                     erreur: str = "") -> str:
+    v = valeurs or {}
+    champs_nature = "".join(
+        f'<option value="{esc(c)}" {"selected" if c == v.get("type_sejour") else ""}>{esc(l)}</option>'
+        for c, l in metier.NATURES.items())
+    contenu = f"""
+<h1>Saisir une demande</h1>
+<p class="sous-titre">Demande reçue par téléphone, au portail ou par courriel.</p>
+{carte("", f'''<form method="post" action="/demandes/nouveau">
+  {_csrf(csrf)}
+  <div class="ligne">
+    <div><label>Prénom</label><input type="text" name="prenom" value="{esc(v.get('prenom'))}"></div>
+    <div><label>Nom</label><input type="text" name="nom" value="{esc(v.get('nom'))}" required></div>
+  </div>
+  <div class="ligne">
+    <div><label>Provenance</label><input type="text" name="provenance" value="{esc(v.get('provenance'))}"></div>
+    <div><label>Téléphone</label><input type="text" name="telephone" value="{esc(v.get('telephone'))}"></div>
+    <div><label>Courriel</label><input type="email" name="email" value="{esc(v.get('email'))}"></div>
+  </div>
+  <div class="ligne">
+    <div><label>Nature du séjour</label><select name="type_sejour">{champs_nature}</select></div>
+    <div><label>Arrivée</label><input type="date" name="date_arrivee" value="{esc(v.get('date_arrivee'))}"></div>
+    <div><label>Départ</label><input type="date" name="date_depart" value="{esc(v.get('date_depart'))}"></div>
+  </div>
+  <div class="ligne">
+    <div><label>Nombre de personnes</label><input type="number" min="1" name="nb_personnes" value="{esc(v.get('nb_personnes') or 1)}"></div>
+    <div><label>Hommes</label><input type="number" min="0" name="nb_hommes" value="{esc(v.get('nb_hommes'))}"></div>
+    <div><label>Femmes</label><input type="number" min="0" name="nb_femmes" value="{esc(v.get('nb_femmes'))}"></div>
+  </div>
+  <div class="ligne">
+    <div><label>Régime alimentaire</label><input type="text" name="regime_alimentaire" value="{esc(v.get('regime_alimentaire'))}"></div>
+    <div><label>Accessibilité</label><input type="text" name="accessibilite" value="{esc(v.get('accessibilite'))}"></div>
+  </div>
+  <label>Besoins ou remarques</label><textarea name="besoin_note">{esc(v.get('besoin_note'))}</textarea>
+  <label>Message de l'hôte</label><textarea name="message">{esc(v.get('message'))}</textarea>
+  <div class="barre-actions">
+    <button class="btn" type="submit">Enregistrer et transmettre</button>
+    <a class="btn btn-secondaire" href="/demandes">Annuler</a>
+  </div>
+</form>''')}
+"""
+    return page("Saisir une demande", contenu, user, "demandes", message, erreur)
+
+
+# ===========================================================================
+# Fiche d'une demande
+# ===========================================================================
+def demande_detail(db, user, dem, csrf: str, message: str = "", erreur: str = "") -> str:
+    identifiant = dem["id"]
+    dispo = metier.verifier_disponibilite(db, dem.get("date_arrivee"), dem.get("date_depart"),
+                                           dem.get("nb_personnes") or 1)
+    chambre = metier.chambre(db, dem.get("chambre_id"))
+    messages = []
+    if dem.get("conversation_id"):
+        messages = db.lignes("SELECT * FROM messages WHERE conversation_id = ? ORDER BY id",
+                             (dem["conversation_id"],))
+    notifications = db.lignes(
+        "SELECT * FROM notifications WHERE demande_id = ? ORDER BY id DESC", (identifiant,))
+
+    def ligne(label, valeur):
+        return f"<dt>{esc(label)}</dt><dd>{valeur}</dd>"
+
+    composition = f"{esc(dem.get('nb_personnes') or 1)} personne(s)"
+    if dem.get("nb_hommes") or dem.get("nb_femmes"):
+        composition += f" — {esc(dem.get('nb_hommes') or 0)} hommes, {esc(dem.get('nb_femmes') or 0)} femmes"
+
+    besoins = []
+    for cle, libelle in (("regime_alimentaire", "Régime"), ("accessibilite", "Accessibilité"),
+                         ("participation_offices", "Offices"), ("besoin_note", "Remarque")):
+        if dem.get(cle):
+            besoins.append(f"{libelle} : {esc(dem[cle])}")
+    if dem.get("premiere_visite"):
+        besoins.append("Première visite")
+
+    options_statut = "".join(
+        f'<option value="{esc(c)}" {"selected" if c == dem.get("statut") else ""}>{esc(l)}</option>'
+        for c, l in metier.STATUTS.items())
+    libres = {c["id"] for c in dispo["chambres_libres"]}
+    options_chambre = '<option value="0">— aucune —</option>' + "".join(
+        f'<option value="{c["id"]}" {"selected" if c["id"] == dem.get("chambre_id") else ""}>'
+        f'{esc(c["nom"])} ({c["capacite"]} pl.) '
+        f'{"libre" if c["id"] in libres else "occupée"}</option>'
+        for c in metier.chambres(db))
+
+    dispo_html = (
+        f"<strong>{'Disponible' if dispo['disponible'] else 'À vérifier'}</strong> — "
+        f"{dispo['nb_chambres_libres']} chambre(s) libre(s) sur {dispo['nb_chambres_totales']}, "
+        f"{dispo['capacite_libre']} place(s) pour {esc(dem.get('nb_personnes') or 1)} personne(s)"
+        + (f" <span class=\"muted\">({esc(dispo['motif'])})</span>" if dispo.get("motif") else ""))
+
+    fil = ""
+    if messages:
+        bulles = []
+        for m in messages:
+            classe = "bulle-hote" if m["direction"] == "entrant" else "bulle-agent"
+            nom = "Hôte" if m["direction"] == "entrant" else "Agent"
+            bulles.append(f'<div class="bulle {classe}"><div class="bulle-meta">{esc(nom)} · '
+                          f'{esc(m["horodatage"])} · {esc(m["canal"])}</div>{esc(m["corps"])}</div>')
+        fil = f'<div class="transcription">{"".join(bulles)}</div>'
+    else:
+        fil = '<p class="muted">Aucun échange enregistré.</p>'
+
+    notif_html = tableau(
+        ["Date", "Canal", "Destinataire", "Statut", "Motif"],
+        [[esc((n["horodatage"] or "")[:16]), esc(n["canal"]), esc(n["destinataire"]),
+          badge(n["statut"]), esc(n["erreur"] or "—")] for n in notifications],
+        "Aucune transmission consignée.")
+
+    lien_conv = (f'<a href="/conversations/{esc(dem.get("conversation_id"))}">Voir l\'échange complet</a>'
+                 if dem.get("conversation_id") else "—")
+
+    contenu = f"""
+<h1>Demande {esc(dem.get('reference'))}</h1>
+<p class="sous-titre">{esc(_hote(dem))} · {badge(dem.get('statut'), metier.libelle_statut(dem.get('statut')))}</p>
+<div class="grille grille-2">
+  {carte("Ce que l'hôte a confié", f'''<dl class="fiche">
+    {ligne("Hôte", esc(_hote(dem)))}
+    {ligne("Provenance", esc(dem.get('provenance') or 'à préciser'))}
+    {ligne("Téléphone", esc(dem.get('telephone') or '—'))}
+    {ligne("Courriel", esc(dem.get('email') or '—'))}
+    {ligne("Nature", esc(metier.nature(dem.get('type_sejour'))))}
+    {ligne("Période", esc(_periode(dem)))}
+    {ligne("Composition", composition)}
+    {ligne("Besoins", '<br>'.join(besoins) if besoins else 'aucun')}
+    {ligne("Reçue le", esc(dem.get('cree_le') or '—'))}
+    {ligne("Source", esc(dem.get('source') or 'agent'))}
+    {ligne("Échange", lien_conv)}
+  </dl>''')}
+  {carte("Discernement", f'''<p>{dispo_html}</p>
+    <form method="post" action="/demandes/{identifiant}/statut" class="barre-actions">
+      {_csrf(csrf)}
+      <div><label>Décision</label><select name="statut">{options_statut}</select></div>
+      <div><button class="btn" type="submit">Enregistrer</button></div>
+    </form>
+    <form method="post" action="/demandes/{identifiant}/chambre" class="barre-actions">
+      {_csrf(csrf)}
+      <div><label>Chambre attribuée</label><select name="chambre_id">{options_chambre}</select></div>
+      <div><button class="btn" type="submit">Attribuer</button></div>
+    </form>
+    <p class="petit muted">Chambre actuelle : {esc((chambre or {}).get('nom') or 'non attribuée')}.
+    Attribuer une chambre confirme la demande.</p>''')}
+</div>
+{carte("Répondre à l'hôte", f'''<form method="post" action="/demandes/{identifiant}/repondre">
+  {_csrf(csrf)}
+  <label>Message envoyé à l'hôte</label>
+  <textarea name="message" required placeholder="Bien volontiers, nous vous accueillons du …"></textarea>
+  <div class="barre-actions">
+    <button class="btn" type="submit">Envoyer</button>
+    <button class="btn btn-secondaire" type="submit" formaction="/demandes/{identifiant}/notifier">Retransmettre la fiche aux frères</button>
+  </div>
+  <p class="petit muted">Le message part par WhatsApp si un jeton est configuré, sinon par courriel.</p>
+</form>''')}
+{carte("Notes internes", f'''<form method="post" action="/demandes/{identifiant}/notes">
+  {_csrf(csrf)}
+  <textarea name="notes_internes">{esc(dem.get('notes_internes') or '')}</textarea>
+  <div class="barre-actions"><button class="btn" type="submit">Enregistrer les notes</button></div>
+</form>''')}
+{carte("Historique de l'échange", fil)}
+{carte("Transmissions", notif_html)}
+{carte("", f'''<form method="post" action="/demandes/{identifiant}/supprimer" onsubmit="return confirm('Supprimer définitivement cette demande et ses données personnelles ?');">
+  {_csrf(csrf)}
+  <button class="btn btn-danger btn-mini" type="submit">Supprimer la demande</button>
+  <span class="petit muted">Effacement demandé par un hôte, par exemple.</span>
+</form>''')}
+"""
+    return page(f"Demande {dem.get('reference')}", contenu, user, "demandes", message, erreur)
+
+
+# ===========================================================================
+# Calendrier
+# ===========================================================================
+def calendrier(db, user, annee: int, mois: int, csrf: str, message: str = "",
+               erreur: str = "") -> str:
+    occ = metier.occupation_mois(db, annee, mois)
+    mois_noms = ["", "janvier", "février", "mars", "avril", "mai", "juin", "juillet",
+                 "août", "septembre", "octobre", "novembre", "décembre"]
+    precedent = (dt.date(annee, mois, 1) - dt.timedelta(days=1))
+    suivant = (dt.date(annee, mois, 28) + dt.timedelta(days=7)).replace(day=1)
+
+    entete = "<tr><th class=\"nom\">Chambre</th>" + "".join(
+        f"<th>{j.day}</th>" for j in occ["jours"]) + "</tr>"
+    lignes = []
+    for c in occ["chambres"]:
+        cellules = []
+        for j in occ["jours"]:
+            case = occ["cases"].get((j.isoformat(), c["id"]))
+            if not case:
+                cellules.append("<td></td>")
+                continue
+            if case["type"] == "sejour":
+                classe = ("case-attente" if case.get("statut") == "en_attente" else "case-sejour")
+                if case.get("arrivee") == j.isoformat():
+                    classe += " case-arrivee"
+                if case.get("depart") == j.isoformat():
+                    classe += " case-depart"
+                contenu_case = (f'<a class="case-lien" href="/demandes/{case["demande_id"]}" '
+                                f'title="{esc(case.get("nom"))} — {esc(case.get("reference"))}">'
+                                f'{"↦" if case.get("arrivee") == j.isoformat() else ("⇥" if case.get("depart") == j.isoformat() else "•")}</a>')
+            else:
+                classe = "case-blocage"
+                contenu_case = f'<span class="case-lien" title="{esc(case.get("motif") or "indisponible")}">✕</span>'
+            cellules.append(f'<td class="{classe}">{contenu_case}</td>')
+        lignes.append(f'<tr><th class="nom">{esc(c["nom"])}</th>' + "".join(cellules) + "</tr>")
+
+    blocages = metier.blocages(db)
+    options = "".join(f'<option value="{c["id"]}">{esc(c["nom"])}</option>'
+                      for c in metier.chambres(db))
+    liste_blocages = tableau(
+        ["Chambre", "Du", "Au", "Motif", ""],
+        [[esc(b.get("chambre_nom") or "—"), esc(metier.format_date(b["date_debut"])),
+          esc(metier.format_date(b["date_fin"])), esc(b.get("motif") or "—"),
+          f'<form method="post" action="/blocages/{b["id"]}/supprimer">{_csrf(csrf)}'
+          f'<button class="btn btn-mini btn-secondaire" type="submit">Retirer</button></form>']
+         for b in blocages], "Aucune indisponibilité déclarée.")
+
+    contenu = f"""
+<h1>Occupation — {esc(mois_noms[mois])} {annee}</h1>
+<p class="sous-titre">↦ arrivée · ⇥ départ · • nuit · ✕ chambre indisponible</p>
+<div class="pagination">
+  <a href="/calendrier?annee={precedent.year}&mois={precedent.month}">← {esc(mois_noms[precedent.month])}</a>
+  <strong>{esc(mois_noms[mois])} {annee}</strong>
+  <a href="/calendrier?annee={suivant.year}&mois={suivant.month}">{esc(mois_noms[suivant.month])} →</a>
+</div>
+{carte("", f'<div style="overflow-x:auto"><table class="calendrier">{entete}{"".join(lignes)}</table></div>')}
+<div class="grille grille-2">
+  {carte("Déclarer une indisponibilité", f'''<form method="post" action="/blocages">
+    {_csrf(csrf)}
+    <div class="ligne">
+      <div><label>Chambre</label><select name="chambre_id">{options}</select></div>
+      <div><label>Du</label><input type="date" name="date_debut" required></div>
+      <div><label>Au</label><input type="date" name="date_fin" required></div>
+    </div>
+    <label>Motif</label><input type="text" name="motif" placeholder="travaux, retraite de la communauté…">
+    <div class="barre-actions"><button class="btn" type="submit">Bloquer</button></div>
+  </form>''')}
+  {carte("Chambres", f'''<form method="post" action="/chambres">
+    {_csrf(csrf)}
+    <div class="ligne">
+      <div><label>Nom</label><input type="text" name="nom" required></div>
+      <div><label>Capacité</label><input type="number" min="1" name="capacite" value="1"></div>
+      <div><label>Aile</label><input type="text" name="aile"></div>
+    </div>
+    <div class="ligne">
+      <div><label>Accès PMR</label><select name="pmr"><option value="0">non</option><option value="1">oui</option></select></div>
+      <div style="align-self:end"><button class="btn" type="submit">Ajouter la chambre</button></div>
+    </div>
+  </form>''')}
+</div>
+{carte("Indisponibilités déclarées", liste_blocages)}
+"""
+    return page("Occupation", contenu, user, "calendrier", message, erreur)
+
+
+# ===========================================================================
+# Base de connaissances
+# ===========================================================================
+def connaissances_liste(db, user, q: str = "", manquantes: bool = False,
+                        message: str = "", erreur: str = "") -> str:
+    if manquantes:
+        fiches = knowledge.fiches_a_completer(db)
+    elif q:
+        motif = f"%{q}%"
+        fiches = db.lignes(
+            "SELECT * FROM connaissances WHERE question LIKE ? OR mots_cles LIKE ? "
+            "OR reponse LIKE ? OR cle LIKE ? OR categorie LIKE ? "
+            "ORDER BY categorie, priorite DESC", (motif,) * 5)
+    else:
+        fiches = db.lignes("SELECT * FROM connaissances ORDER BY categorie, priorite DESC, cle")
+    lignes = []
+    for f in fiches:
+        etat = ("<span class=\"badge b-echoue\">à compléter</span>"
+                if knowledge.est_a_completer(f["reponse"]) else
+                ("<span class=\"badge b-envoye\">active</span>" if f["active"]
+                 else "<span class=\"badge b-ignore\">désactivée</span>"))
+        lignes.append([
+            f'<a href="/connaissances/{f["id"]}">{esc(f["cle"])}</a>',
+            esc(f["categorie"]), esc(f["question"]), esc(f["priorite"]), etat])
+    n_manquantes = len(knowledge.fiches_a_completer(db))
+    contenu = f"""
+<h1>Base de connaissances</h1>
+<p class="sous-titre">La parole de la maison, que l'agent ne fait que transmettre.</p>
+{carte("", f'''<form method="get" action="/connaissances" class="ligne">
+  <div><label for="q">Recherche</label><input type="text" id="q" name="q" value="{esc(q)}" placeholder="offices, offrande, trajet…"></div>
+  <div style="align-self:end"><label style="display:flex;gap:8px;align-items:center;text-transform:none">
+    <input type="checkbox" name="manquantes" value="1" {"checked" if manquantes else ""} style="width:auto">
+    Seulement les fiches à compléter ({n_manquantes})</label></div>
+  <div style="align-self:end"><button class="btn" type="submit">Chercher</button></div>
+</form>''')}
+{carte("", tableau(["Clé", "Catégorie", "Question", "Prio.", "État"], lignes,
+      "Aucune fiche ne correspond."),
+      '<div class="barre-actions"><a class="btn" href="/connaissances/nouvelle">Nouvelle fiche</a>'
+      '<a class="btn btn-secondaire" href="/connaissances/export.json">Export JSON</a></div>')}
+<p class="petit muted">Une mention <span class="mono">[[À COMPLÉTER …]]</span> n'est jamais
+montrée à un hôte : l'agent répond alors qu'il transmet la question aux frères.</p>
+"""
+    return page("Base de connaissances", contenu, user, "connaissances", message, erreur)
+
+
+def connaissance_fiche(db, user, fiche, csrf: str, message: str = "",
+                       erreur: str = "") -> str:
+    f = fiche or {"cle": "", "categorie": "divers", "question": "", "mots_cles": "",
+                  "reponse": "", "priorite": 5, "active": 1, "id": ""}
+    categories = sorted({x["categorie"] for x in db.lignes("SELECT DISTINCT categorie FROM connaissances")}
+                        | {"accueil", "offices", "sejour", "regles_maison", "tarif", "acces",
+                           "contacts", "sante", "groupes", "vocation", "formation", "boutique",
+                           "vie_monastique", "divers"})
+    options = "".join(f'<option value="{esc(c)}" {"selected" if c == f["categorie"] else ""}>{esc(c)}</option>'
+                      for c in categories)
+    supprimer = ""
+    if f.get("id"):
+        supprimer = f'''<form method="post" action="/connaissances/{f["id"]}/supprimer"
+          onsubmit="return confirm('Supprimer cette fiche ?');" style="display:inline">
+          {_csrf(csrf)}<button class="btn btn-danger btn-mini" type="submit">Supprimer</button></form>'''
+    contenu = f"""
+<h1>{'Modifier une fiche' if f.get('id') else 'Nouvelle fiche'}</h1>
+<p class="sous-titre">Écrire ici, c'est écrire ce que l'agent dira. Relisez à voix haute.</p>
+{carte("", f'''<form method="post" action="/connaissances/{f.get('id') or 'nouvelle'}">
+  {_csrf(csrf)}
+  <div class="ligne">
+    <div><label>Clé (identifiant stable)</label><input type="text" name="cle" value="{esc(f.get('cle'))}" required></div>
+    <div><label>Catégorie</label><select name="categorie">{options}</select></div>
+    <div><label>Priorité (1–10)</label><input type="number" min="1" max="10" name="priorite" value="{esc(f.get('priorite') or 5)}"></div>
+  </div>
+  <label>Question type</label>
+  <input type="text" name="question" value="{esc(f.get('question'))}" required>
+  <label>Mots-clés (séparés par des virgules)</label>
+  <input type="text" name="mots_cles" value="{esc(f.get('mots_cles'))}">
+  <label>Réponse de la maison</label>
+  <textarea name="reponse" style="min-height:260px">{esc(f.get('reponse'))}</textarea>
+  <div class="ligne" style="margin-top:10px">
+    <div><label style="display:flex;gap:8px;align-items:center;text-transform:none">
+      <input type="checkbox" name="active" value="1" {"checked" if f.get('active', 1) else ""} style="width:auto">
+      Fiche active</label></div>
+  </div>
+  <div class="barre-actions">
+    <button class="btn" type="submit">Enregistrer</button>
+    <a class="btn btn-secondaire" href="/connaissances">Retour</a>
+    {supprimer}
+  </div>
+  <p class="petit muted">Pour signaler une information manquante, laissez une mention
+  <span class="mono">[[À COMPLÉTER : …]]</span> : elle sera visible des frères seulement.</p>
+</form>''')}
+"""
+    return page("Fiche de connaissance", contenu, user, "connaissances", message, erreur)
+
+
+# ===========================================================================
+# Simulateur
+# ===========================================================================
+def simulateur(db, user, cid: str, csrf: str, message: str = "", erreur: str = "") -> str:
+    messages = db.lignes("SELECT * FROM messages WHERE conversation_id = ? ORDER BY id", (cid,))
+    conversation = db.ligne("SELECT * FROM conversations WHERE id = ?", (cid,))
+    donnees = {}
+    if conversation:
+        try:
+            donnees = json.loads(conversation.get("donnees") or "{}")
+        except ValueError:
+            donnees = {}
+    bulles = []
+    for m in messages:
+        classe = "bulle-hote" if m["direction"] == "entrant" else "bulle-agent"
+        bulles.append(f'<div class="bulle {classe}"><div class="bulle-meta">'
+                      f'{"Hôte" if m["direction"] == "entrant" else "Agent"} · {esc(m["horodatage"])}</div>'
+                      f'{esc(m["corps"]) or "(silence)"}</div>')
+    if not bulles:
+        bulles.append('<div class="bulle bulle-agent"><div class="bulle-meta">Agent</div>'
+                      'Écrivez « Bonjour » pour commencer l\'essai.</div>')
+    resume = {k: v for k, v in donnees.items()
+              if k in ("etape", "nom", "prenom", "provenance", "type_sejour",
+                       "date_arrivee", "date_depart", "nb_personnes", "regime",
+                       "accessibilite", "besoins_connus", "relances", "humain_requis")}
+    contenu = f"""
+<h1>Simulateur</h1>
+<p class="sous-titre">L'agent répond pour de vrai, mais aucun message ne quitte la maison.</p>
+<div class="grille grille-2">
+  {carte("Échange", f'''<div class="transcription">{"".join(bulles)}</div>
+    <form method="post" action="/simulateur">
+      {_csrf(csrf)}
+      <input type="hidden" name="cid" value="{esc(cid)}">
+      <label>Message de l'hôte</label>
+      <textarea name="message" required style="min-height:70px" autofocus></textarea>
+      <div class="barre-actions">
+        <button class="btn" type="submit">Envoyer</button>
+        <a class="btn btn-secondaire" href="/simulateur?nouveau=1">Nouvel essai</a>
+      </div>
+    </form>''')}
+  {carte("Ce que l'agent a compris", f'''<pre class="mono">{esc(json.dumps(resume, ensure_ascii=False, indent=2))}</pre>
+    <p class="petit muted">Rien n'est confirmé à l'hôte : la demande est transmise aux frères.</p>''')}
+</div>
+"""
+    return page("Simulateur", contenu, user, "simulateur", message, erreur)
+
+
+# ===========================================================================
+# Échanges
+# ===========================================================================
+def conversations_liste(db, user, message: str = "", erreur: str = "") -> str:
+    liste = db.lignes("SELECT * FROM conversations ORDER BY maj DESC LIMIT 200")
+    lignes = []
+    for c in liste:
+        relais = ("<span class=\"badge b-echoue\">à reprendre</span>" if c["humain_requis"]
+                  else "<span class=\"badge b-envoye\">agent</span>")
+        demande = (f'<a href="/demandes/{c["demande_id"]}">dossier</a>' if c.get("demande_id") else "—")
+        lignes.append([f'<a href="/conversations/{esc(c["id"])}">{esc(c["id"])[:26]}</a>',
+                       esc(c.get("nom_affiche") or "—"), esc(c.get("canal") or "—"),
+                       esc(c.get("etat") or "—"), relais, demande, esc((c.get("maj") or "")[:16])])
+    contenu = f"""
+<h1>Échanges</h1>
+<p class="sous-titre">Toutes les conversations, et celles où un frère doit prendre le relais.</p>
+{carte("", tableau(["Conversation", "Hôte", "Canal", "État", "Qui répond", "Dossier", "Dernier message"],
+      lignes, "Aucun échange pour le moment."))}
+"""
+    return page("Échanges", contenu, user, "conversations", message, erreur)
+
+
+def conversation_detail(db, user, conv, csrf: str, message: str = "",
+                        erreur: str = "") -> str:
+    messages = db.lignes("SELECT * FROM messages WHERE conversation_id = ? ORDER BY id",
+                         (conv["id"],))
+    bulles = []
+    for m in messages:
+        classe = "bulle-hote" if m["direction"] == "entrant" else "bulle-agent"
+        bulles.append(f'<div class="bulle {classe}"><div class="bulle-meta">'
+                      f'{"Hôte" if m["direction"] == "entrant" else "Agent"} · '
+                      f'{esc(m["horodatage"])} · {esc(m["canal"])}</div>'
+                      f'{esc(m["corps"]) or "(silence)"}</div>')
+    donnees = {}
+    try:
+        donnees = json.loads(conv.get("donnees") or "{}")
+    except ValueError:
+        pass
+    action = ("rendre" if conv.get("humain_requis") else "prendre")
+    libelle = ("Rendre la parole à l'agent" if conv.get("humain_requis")
+               else "Prendre le relais (l'agent se taira)")
+    demande = (f'<a href="/demandes/{conv["demande_id"]}">Voir le dossier</a>'
+               if conv.get("demande_id") else "Aucun dossier constitué")
+    contenu = f"""
+<h1>Échange {esc(conv['id'])}</h1>
+<p class="sous-titre">{esc(conv.get('nom_affiche') or 'hôte non identifié')} ·
+{esc(conv.get('canal') or '')} · {esc(conv.get('telephone') or '')} · {demande}</p>
+{carte("Transcription", f'<div class="transcription">{"".join(bulles) or "<p class=muted>Aucun message.</p>"}</div>')}
+{carte("Ce que l'agent a recueilli", f'<pre class="mono">{esc(json.dumps(donnees, ensure_ascii=False, indent=2))}</pre>')}
+{carte("Relais", f'''<form method="post" action="/conversations/{esc(conv['id'])}/relais">
+  {_csrf(csrf)}<input type="hidden" name="action" value="{action}">
+  <button class="btn" type="submit">{esc(libelle)}</button>
+</form>''')}
+"""
+    return page("Échange", contenu, user, "conversations", message, erreur)
+
+
+# ===========================================================================
+# Notifications et journal
+# ===========================================================================
+def notifications_liste(db, user, message: str = "", erreur: str = "") -> str:
+    liste = db.lignes(
+        "SELECT n.*, d.reference FROM notifications n LEFT JOIN demandes d "
+        "ON d.id = n.demande_id ORDER BY n.id DESC LIMIT 300")
+    lignes = []
+    for n in liste:
+        ref = (f'<a href="/demandes/{n["demande_id"]}">{esc(n["reference"])}</a>'
+               if n.get("reference") else "—")
+        lignes.append([esc((n["horodatage"] or "")[:16]), ref, esc(n["canal"]),
+                       esc(n["destinataire"] or "—"), badge(n["statut"]),
+                       esc(n["erreur"] or "—")])
+    contenu = f"""
+<h1>Notifications</h1>
+<p class="sous-titre">Ce qui est parti, ce qui n'est pas parti, et pourquoi.</p>
+{carte("", tableau(["Date", "Dossier", "Canal", "Destinataire", "Statut", "Motif"],
+      lignes, "Aucune transmission."))}
+"""
+    return page("Notifications", contenu, user, "notifications", message, erreur)
+
+
+def journal_liste(db, user) -> str:
+    liste = db.lignes("SELECT * FROM journal ORDER BY id DESC LIMIT 400")
+    lignes = [[esc((j["horodatage"] or "")[:19]), esc(j["acteur"]), esc(j["action"]),
+               esc(j["objet"]), esc(j["details"])] for j in liste]
+    contenu = f"""
+<h1>Journal</h1>
+<p class="sous-titre">Qui a fait quoi. Rien n'est effaçable depuis l'interface.</p>
+{carte("", tableau(["Date", "Acteur", "Action", "Objet", "Détails"], lignes, "Journal vide."))}
+"""
+    return page("Journal", contenu, user, "journal")
+
+
+# ===========================================================================
+# Paramètres
+# ===========================================================================
+MASQUE = "••••••••"
+
+GROUPES_PARAMETRES = [
+    ("L'agent d'accueil", [
+        ("agent_actif", "Agent actif (1 = répond, 0 = relais humain seul)", "drapeau"),
+        ("agent_heures_debut", "Heure de début affichée", "texte"),
+        ("agent_heures_fin", "Heure de fin affichée", "texte"),
+        ("agent_delai_reponse", "Délai honnête annoncé aux hôtes", "texte"),
+    ]),
+    ("WhatsApp (Meta Cloud API)", [
+        ("wa_token", "Jeton permanent", "secret"),
+        ("wa_phone_number_id", "Identifiant du numéro (phone_number_id)", "texte"),
+        ("wa_verify_token", "Jeton de vérification du webhook", "texte"),
+        ("wa_app_secret", "Secret de l'application (signature)", "secret"),
+    ]),
+    ("Relais vers les frères", [
+        ("hoteliers_emails", "Adresses de courriel (séparées par des virgules)", "texte"),
+        ("hoteliers_whatsapp", "Numéros WhatsApp (séparés par des virgules)", "texte"),
+        ("notifier_par_email", "Notifier par courriel", "drapeau"),
+        ("notifier_par_whatsapp", "Notifier par WhatsApp", "drapeau"),
+    ]),
+    ("Courriel (SMTP)", [
+        ("smtp_hote", "Serveur SMTP", "texte"),
+        ("smtp_port", "Port (465 = SSL, 587 = STARTTLS)", "texte"),
+        ("smtp_utilisateur", "Compte", "texte"),
+        ("smtp_mot_de_passe", "Mot de passe d'application", "secret"),
+        ("smtp_expediteur", "Adresse d'expédition", "texte"),
+        ("smtp_tls", "Utiliser TLS", "drapeau"),
+    ]),
+    ("Module de langage (facultatif)", [
+        ("ia_active", "Activer le module de langage", "drapeau"),
+        ("ia_fournisseur", "Fournisseur (openai ou anthropic)", "texte"),
+        ("ia_modele", "Modèle", "texte"),
+        ("ia_cle_api", "Clé d'API", "secret"),
+        ("ia_temperature", "Température (0 à 1)", "texte"),
+        ("ia_delai", "Délai d'attente (secondes)", "texte"),
+    ]),
+    ("API JSON (/api/agent)", [
+        ("api_cle", "Clé d'API (laisser vide ferme l'API)", "secret"),
+        ("api_ouverte", "Ouvrir l'API sans clé (déconseillé)", "drapeau"),
+    ]),
+]
+
+PARAMETRES_SECRETS = {cle for _, champs in GROUPES_PARAMETRES for cle, _, type_ in champs
+                      if type_ == "secret"}
+PARAMETRES_CLEFS = [cle for _, champs in GROUPES_PARAMETRES for cle, _, _ in champs]
+
+
+def parametres(db, user, csrf: str, message: str = "", erreur: str = "") -> str:
+    import os
+    blocs = []
+    for titre, champs in GROUPES_PARAMETRES:
+        lignes = []
+        for cle, libelle, type_ in champs:
+            valeur = config.parametre(db, cle, "")
+            force = bool(os.environ.get(cle))
+            note = (' <span class="petit muted">(défini par l\'environnement, prioritaire)</span>'
+                    if force else "")
+            if type_ == "drapeau":
+                actif = valeur.lower() in ("1", "true", "oui", "on")
+                html_champ = (f'<select name="{cle}">'
+                              f'<option value="1" {"selected" if actif else ""}>oui</option>'
+                              f'<option value="0" {"" if actif else "selected"}>non</option></select>')
+            elif type_ == "secret":
+                affiche = MASQUE if valeur else ""
+                html_champ = (f'<input type="text" name="{cle}" value="{esc(affiche)}" '
+                              f'autocomplete="off" placeholder="(vide)">')
+            else:
+                html_champ = f'<input type="text" name="{cle}" value="{esc(valeur)}">'
+            lignes.append(f'<label for="{cle}">{esc(libelle)}{note}</label>{html_champ}')
+        blocs.append(carte(titre, "".join(lignes)))
+    contenu = f"""
+<h1>Paramètres</h1>
+<p class="sous-titre">Une variable d'environnement l'emporte toujours sur la valeur saisie ici.</p>
+<form method="post" action="/parametres">
+  {_csrf(csrf)}
+  <div class="grille grille-2">{"".join(blocs)}</div>
+  <div class="barre-actions"><button class="btn" type="submit">Enregistrer les paramètres</button></div>
+  <p class="petit muted">Un secret déjà enregistré s'affiche masqué : le laisser tel quel ne le change pas.</p>
+</form>
+"""
+    return page("Paramètres", contenu, user, "parametres", message, erreur)

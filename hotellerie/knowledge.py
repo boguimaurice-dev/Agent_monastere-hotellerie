@@ -244,6 +244,15 @@ def enregistrer(db, fiche_data: dict) -> int:
         return int(identifiant)
     if not cle:
         cle = "fiche-" + re.sub(r"[^a-z0-9]+", "-", normaliser(donnees.get("question") or ""))[:40]
+    existe = db.ligne("SELECT id FROM connaissances WHERE cle = ?", (cle,))
+    if existe:
+        # Une création avec une clé déjà prise met à jour la fiche existante :
+        # mieux vaut corriger la parole de la maison que créer un doublon.
+        db.executer(
+            "UPDATE connaissances SET categorie=?, question=?, mots_cles=?, reponse=?, "
+            "priorite=?, active=?, maj_le=datetime('now','localtime') WHERE id=?",
+            champs + (int(existe["id"]),))
+        return int(existe["id"])
     db.executer(
         "INSERT INTO connaissances (categorie, question, mots_cles, reponse, priorite, active, cle) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)", champs + (cle,))

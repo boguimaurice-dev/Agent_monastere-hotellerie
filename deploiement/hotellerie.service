@@ -1,0 +1,43 @@
+# ---------------------------------------------------------------------------
+# Hôtellerie & Accueil — Monastère Sainte-Marie de Bouaké
+#
+# Unité systemd. À copier dans /etc/systemd/system/, puis :
+#
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now hotellerie
+#   sudo journalctl -u hotellerie -f
+#
+# Adapter User, Group et WorkingDirectory à l'installation réelle.
+# ---------------------------------------------------------------------------
+[Unit]
+Description=Hôtellerie & Accueil — Monastère Sainte-Marie de Bouaké
+Documentation=file:///opt/hotellerie/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hotellerie
+Group=hotellerie
+WorkingDirectory=/opt/hotellerie
+Environment=HOTELLERIE_DATA_DIR=/var/lib/hotellerie
+Environment=PORT=8080
+Environment=PYTHONUNBUFFERED=1
+# Un seul processus : la base SQLite n'aime pas les accès concurrents
+ExecStart=/usr/bin/python3 /opt/hotellerie/run.py servir --hote 127.0.0.1 --port 8080
+
+Restart=on-failure
+RestartSec=5
+# Jamais deux instances : la base refuserait de s'ouvrir proprement.
+KillMode=control-group
+TimeoutStopSec=20
+
+# Durcissement simple, compatible avec une petite machine.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/hotellerie
+
+[Install]
+WantedBy=multi-user.target

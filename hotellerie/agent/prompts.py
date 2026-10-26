@@ -113,7 +113,7 @@ DEMANDE_PERIODE = (
 DEMANDE_PERSONNES = "Combien de personnes serez-vous ?"
 
 DEMANDE_BESOINS = (
-    "Bien noté. Y a-t-il des besoins particuliers à prévoir — un régime "
+    "Y a-t-il des besoins particuliers à prévoir — un régime "
     "alimentaire, une difficulté de déplacement, ou un souhait quant à la "
     "participation aux offices ? Un simple « rien de particulier » me convient "
     "très bien."
@@ -247,6 +247,13 @@ RELANCE_NATURE = (
 ANNULATION = (
     "Votre demande a bien été retirée. Si vous souhaitez revenir plus tard, "
     "écrivez-moi simplement : la porte reste ouverte.\n\n"
+    "Que Dieu vous garde."
+)
+
+ANNULATION_SANS_DOSSIER = (
+    "Je ne trouve aucune demande ouverte à votre nom dans nos échanges. "
+    "Si vous avez réservé par téléphone ou par courriel, appelez l'hôtellerie au "
+    + config.TEL_HOTELLERIE + " : un frère vérifiera et retirera la demande.\n\n"
     "Que Dieu vous garde."
 )
 

@@ -35,6 +35,7 @@ from hotellerie.securite import creer_utilisateur  # noqa: E402
 
 
 def configurer_journal(verbeux: bool = False) -> None:
+    config.assurer_dossiers()
     niveau = logging.DEBUG if verbeux else logging.INFO
     handlers = [logging.StreamHandler(sys.stdout)]
     try:

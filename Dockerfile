@@ -12,6 +12,11 @@ COPY run.py ./
 COPY base_connaissances.json ./
 COPY hotellerie/ ./hotellerie/
 
+# Le dossier de données existe avant le VOLUME : sinon Docker créerait un
+# volume appartenant à root, et l'utilisateur non privilégié ne pourrait
+# plus écrire dans sa propre base.
+RUN mkdir -p /app/data
+
 # Les données vivent dans un volume : elles survivent aux reconstructions.
 ENV HOTELLERIE_DATA_DIR=/app/data
 ENV PYTHONUNBUFFERED=1

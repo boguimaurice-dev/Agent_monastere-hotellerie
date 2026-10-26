@@ -267,6 +267,7 @@ serveur et sa sauvegarde s'ils sont dans la même pièce.
 ```
 monastere-hotellerie/
 ├── run.py                    point d'entrée (ligne de commande)
+├── tests.py                  73 vérifications automatiques
 ├── base_connaissances.json   le « cerveau » de l'agent, éditable
 ├── README.md                 ce fichier
 ├── SPECIFICATION.md          cahier des charges complet
