@@ -1,0 +1,17 @@
+# Données : à sauvegarder, jamais à versionner
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Système
+.DS_Store
+Thumbs.db

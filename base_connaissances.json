@@ -1,0 +1,290 @@
+[
+  {
+    "cle": "accueil_presentation",
+    "categorie": "accueil",
+    "question": "Qu'est-ce que l'hôtellerie du monastère ? Qui accueillez-vous ?",
+    "mots_cles": "hotellerie, accueil, qui, quoi, presentation, venir, heberger, loger, chambre, retraitant, hospitalite",
+    "reponse": "L'hôtellerie du Monastère Bénédictin Sainte-Marie de Bouaké accueille tous ceux et toutes celles qui désirent vivre un temps de retraite, de silence et de ressourcement.\n\nNous recevons aussi les personnes qui viennent pour des missions de travail et qui recherchent une structure religieuse où loger, ainsi que de nombreux groupes venus de toute la Côte d'Ivoire.\n\nHormis le silence à respecter, le rythme de la vie de la communauté n'est pas imposé aux hôtes : vous êtes libre de participer aux offices ou de demeurer dans le calme de votre chambre. Dans les chambres, des fiches donnent les renseignements qui vous concernent particulièrement.",
+    "priorite": 10
+  },
+  {
+    "cle": "accueil_esprit",
+    "categorie": "accueil",
+    "question": "Quel est l'esprit de l'accueil bénédictin ?",
+    "mots_cles": "esprit, benedictin, benoit, regle, accueil, christ, hospitalite, spiritualite, sens",
+    "reponse": "Saint Benoît écrit au chapitre 53 de sa Règle : « Tous les hôtes qui se présentent seront reçus comme le Christ. » C'est là tout le cœur de notre accueil.\n\nLe moine bénédictin est invité à ne rien préférer à l'amour du Christ. Sept fois par jour, les frères se retrouvent pour chanter les Psaumes et écouter la Parole de Dieu ; ils intercessent aussi pour le monde et pour l'Église.\n\nConcrètement, vous trouverez ici une maison simple, une chambre ventilée, le silence, et des frères disponibles si vous souhaitez être écouté. Rien ne vous sera imposé.",
+    "priorite": 9
+  },
+  {
+    "cle": "accueil_silence",
+    "categorie": "vie_monastique",
+    "question": "Le silence est-il obligatoire ?",
+    "mots_cles": "silence, parler, bruit, muet, taire, discretion, calme, telephoner, portable, telephone",
+    "reponse": "Le silence est la seule chose que nous vous demandons de respecter : c'est l'air que respire la maison et ce pour quoi beaucoup viennent ici.\n\nConcrètement, on ne parle pas dans les couloirs, dans la cour ni à l'église. Pour les conversations nécessaires, un lieu ou un moment vous sera indiqué. Nous vous demandons aussi de mettre votre téléphone en mode silencieux et de passer vos appels en dehors des bâtiments d'hébergement.\n\nPour tout le reste — le rythme de la communauté, les offices, les temps de prière — rien ne vous est imposé.",
+    "priorite": 9
+  },
+  {
+    "cle": "offices_horaires",
+    "categorie": "offices",
+    "question": "Quels sont les horaires des offices ?",
+    "mots_cles": "horaire, office, messe, laudes, tierce, sexte, none, vepres, vigiles, complies, priere, liturgie, heure, eglise, chapelle, dimanche, semaine, culte",
+    "reponse": "Voici les horaires de la prière de la communauté :\n\nEN SEMAINE\n• 5 h 25 — Laudes (prière de louange du matin, environ 1/2 h, suivie d'1/2 h de prière silencieuse)\n• 6 h 20 — Messe\n• 9 h 00 — Tierce (office célébré en communauté)\n• 12 h 00 — Sexte (prière du milieu du jour, environ 15 mn)\n• 14 h 40 — None (prière du début d'après-midi, environ 15 mn)\n• 17 h 30 — Vêpres (prière du soir, environ 1/2 h)\n• 20 h 30 — Vigiles (prière de la nuit, 3/4 h à 1 h)\n\nLE DIMANCHE\n• 6 h 50 — Laudes\n• 10 h 00 — Messe\n• 12 h 00 — Sexte\n• 14 h 50 — None\n• 18 h 30 — Vêpres\n• 20 h 30 — Vigiles\n\nLes hôtes sont les bienvenus à tous les offices. Vous êtes libre d'y participer selon votre rythme et votre désir.",
+    "priorite": 10
+  },
+  {
+    "cle": "offices_participation",
+    "categorie": "offices",
+    "question": "Puis-je participer aux offices ? Est-ce obligatoire ?",
+    "mots_cles": "participer, obligatoire, assister, office, priere, libre, chanter, psaume, eglise",
+    "reponse": "Les hôtes sont les bienvenus à tous les offices, à n'importe quelle heure de la journée. Rien n'est obligatoire : hormis le silence à respecter, le rythme de la vie de la communauté n'est pas imposé aux hôtes.\n\nBeaucoup de retraitants trouvent que la participation aux offices donne sa saveur au séjour. D'autres viennent surtout pour le silence et ne se rendent qu'à la messe. Les deux manières de faire conviennent.\n\nSi vous souhaitez un accompagnement pour comprendre le déroulement des offices, demandez simplement au frère hôtelier.",
+    "priorite": 8
+  },
+  {
+    "cle": "sejour_duree",
+    "categorie": "sejour",
+    "question": "Quelle est la durée d'un séjour ? Y a-t-il un minimum ?",
+    "mots_cles": "duree, minimum, maximum, combien de temps, combien de nuits, combien de jours, temps, nuit, jour, sejour, longueur, week end, semaine, reste, rester",
+    "reponse": "Il n'y a pas de durée imposée : chacun vient pour le temps dont il a besoin. Une nuit, un week-end, une semaine ou davantage — tout se vit.\n\n[[À COMPLÉTER PAR LE FRÈRE HÔTELIER : durée minimale et maximale effectivement pratiquées, par exemple « en général de 2 à 10 nuits »]]\n\nPour les retraites spirituelles, plusieurs journées complètes permettent d'entrer vraiment dans le silence : la première journée sert souvent à déposer le voyage et le bruit.",
+    "priorite": 8
+  },
+  {
+    "cle": "sejour_chambres",
+    "categorie": "sejour",
+    "question": "Comment sont les chambres ?",
+    "mots_cles": "chambre, lit, confort, salle de bain, douche, eau, ventilateur, moustiquaire, wc, toilette, sanitaire, drap, serviette",
+    "reponse": "Les chambres de l'hôtellerie sont simples, ventilées et équipées de moustiquaires. Chacune dispose d'une salle d'eau individuelle. Les repas se prennent au réfectoire.\n\nNous vous demandons d'apporter vos draps et vos serviettes de toilette (ou de le signaler à l'avance si cela vous est impossible : nous verrons ce qui est arrangeable). Pensez aussi à une Bible, si vous le souhaitez, et à une lampe de poche pour circuler le soir.\n\n[[À COMPLÉTER : nombre total de chambres et capacité de l'hôtellerie]]",
+    "priorite": 9
+  },
+  {
+    "cle": "sejour_repas",
+    "categorie": "sejour",
+    "question": "Comment se passent les repas ? Puis-je demander un régime particulier ?",
+    "mots_cles": "repas, manger, nourriture, regime, vegetarien, allergie, sans, cuisine, refectoire, petit-dejeuner, dejeneur, diner, jeune",
+    "reponse": "Les repas se prennent au réfectoire. La table est simple et soignée, dans la mesure de ce que produisent le jardin et la maison.\n\nLes régimes particuliers (allergie, aliment sans porc, végétarien, diabète, etc.) sont tout à fait possibles : il suffit de nous les signaler à l'avance, idéalement au moment de votre demande, afin que nous puissions en tenir compte.\n\nSi vous souhaitez jeûner ou prendre vos repas à part, dites-le au frère hôtelier : cela s'organise simplement.\n\n[[À COMPLÉTER : horaires des repas]]",
+    "priorite": 8
+  },
+  {
+    "cle": "sejour_offrande",
+    "categorie": "tarif",
+    "question": "Combien coûte un séjour ? Que dois-je donner ?",
+    "mots_cles": "prix, tarif, cout, coute, couter, coute combien, montant, combien, payer, payerai, argent, offrande, participation, gratuit, cfa, franc, don, contribution, budget, combien ca coute, ca coute",
+    "reponse": "L'hospitalité bénédictine est un don : vous n'êtes pas ici dans un hôtel. Une offrande libre est laissée à votre appréciation, selon vos moyens et selon ce que le séjour vous a apporté.\n\n[[À COMPLÉTER PAR LE FRÈRE HÔTELIER : montant de l'offrande conseillée par jour en francs CFA, si la communauté souhaite en indiquer une, et les modalités de règlement (espèces, Mobile Money, virement)]]\n\nSi vous ne pouvez rien donner, dites-le simplement et sans gêne : vous serez accueilli de la même manière. Saint Benoît demande que rien ne soit préféré à l'amour du Christ, et certainement pas l'argent.",
+    "priorite": 9
+  },
+  {
+    "cle": "sejour_apporter",
+    "categorie": "sejour",
+    "question": "Que dois-je apporter ?",
+    "mots_cles": "apporter, bagage, affaire, valise, drap, serviette, bible, lampe, medicament, tenue, vetement, chaussure",
+    "reponse": "À prévoir dans votre bagage :\n\n• Vos draps et serviettes de toilette\n• Une Bible, si vous en avez l'habitude\n• Une lampe de poche (les allées sont peu éclairées la nuit)\n• Vos médicaments personnels\n• Une tenue sobre et décente, adaptée au lieu de prière\n• De quoi écrire, si vous aimez noter\n• Une gourde et, selon la saison, un vêtement de pluie\n\nEn saison des pluies, prévoyez des chaussures qui supportent la boue. Le monastère se trouve en bordure de brousse : la nature est très présente.",
+    "priorite": 8
+  },
+  {
+    "cle": "sejour_tenue",
+    "categorie": "regles_maison",
+    "question": "Y a-t-il une tenue exigée ?",
+    "mots_cles": "tenue, vetement, habit, decence, court, short, jupe, eglise, tenue correcte, pudeur, maillot",
+    "reponse": "Une seule règle : la décence et la discrétion, en particulier à l'église et au réfectoire.\n\nConcrètement, on évite les vêtements trop courts, trop ajustés ou transparents, ainsi que les inscriptions voyantes. Épaules et genoux couverts à l'église sont une bonne règle simple. Pour le reste, une tenue ordinaire et propre convient parfaitement : nous ne sommes pas dans une maison de cérémonie.",
+    "priorite": 6
+  },
+  {
+    "cle": "regles_cloture",
+    "categorie": "regles_maison",
+    "question": "Puis-je circuler partout dans le monastère ?",
+    "mots_cles": "cloture, circuler, aller, interdit, acces, jardin, cour, batiment, promener, limite, zone",
+    "reponse": "Certaines parties du monastère sont réservées à la communauté : c'est ce qu'on appelle la clôture monastique, qui protège le silence et le recueillement des frères.\n\nLes lieux ouverts aux hôtes — votre chambre, la cour, l'église, le réfectoire, les jardins accessibles — vous seront indiqués à l'arrivée par le frère hôtelier. Des panneaux signalent les passages réservés.\n\nCette limite n'est pas une exclusion : c'est la condition pour que la paix du lieu demeure entière, pour vous comme pour les frères.",
+    "priorite": 7
+  },
+  {
+    "cle": "regles_tabac_alcool",
+    "categorie": "regles_maison",
+    "question": "Puis-je fumer ou apporter de l'alcool ?",
+    "mots_cles": "fumer, cigarette, tabac, alcool, boire, vin, biere, drogue, interdit",
+    "reponse": "Le tabac et l'alcool ne sont pas consommés dans les bâtiments d'hébergement ni dans les lieux communs. Si vous fumez, le frère hôtelier vous indiquera un endroit extérieur où cela reste discret.\n\n[[À COMPLÉTER : position exacte de la communauté sur l'alcool et le tabac]]",
+    "priorite": 5
+  },
+  {
+    "cle": "regles_enfants_animaux",
+    "categorie": "regles_maison",
+    "question": "Puis-je venir avec mes enfants ou un animal ?",
+    "mots_cles": "enfant, bebe, animal, chien, chat, famille, mineur, accompagner",
+    "reponse": "Le monastère est une maison de silence, ce qui se concilie difficilement avec la présence de jeunes enfants ou d'animaux.\n\n[[À COMPLÉTER PAR LE FRÈRE HÔTELIER : la communauté accepte-t-elle les enfants, à partir de quel âge, et sous quelles conditions ? Les animaux sont-ils acceptés ?]]\n\nÉcrivez-nous votre situation : nous la regarderons avec attention plutôt que de répondre non par principe.",
+    "priorite": 5
+  },
+  {
+    "cle": "acces_adresse",
+    "categorie": "acces",
+    "question": "Où se trouve le monastère ? Quelle est l'adresse ?",
+    "mots_cles": "adresse, ou, situe, trouver, localisation, route, axe, brobo, bp, boite postale, plan, gps, carte, coordonnees",
+    "reponse": "Monastère Bénédictin Sainte-Marie\nBouaké, sur l'axe de Brobo, juste après le Centre Diocésain Saint Joseph\n01 BP 511 Bouaké 01 — Côte d'Ivoire\n\nBouaké est la deuxième ville de Côte d'Ivoire (environ 1 500 000 habitants). Le monastère se trouve à proximité de la ville, en bordure, dans un cadre de verdure et de calme.",
+    "priorite": 10
+  },
+  {
+    "cle": "acces_depuis_abidjan",
+    "categorie": "acces",
+    "question": "Comment venir depuis Abidjan ?",
+    "mots_cles": "abidjan, route, trajet, transport, bus, voiture, aller, distance, temps de route, autoroute, gare, km, kilometre, comment aller, depuis abidjan",
+    "reponse": "Depuis Abidjan, on rejoint Bouaké par la route nationale (environ 350 km, comptez en général entre 4 et 6 heures selon la circulation et les arrêts). Des cars de transport interurbain desservent Bouaké quotidiennement, ainsi que des services de taxi-brousse.\n\nUne fois à Bouaké, prenez la direction de l'axe de Brobo : le monastère se trouve juste après le Centre Diocésain Saint Joseph. Les chauffeurs de taxi de Bouaké connaissent très bien le monastère ; il suffit souvent de dire « chez les Pères de Brobo ».\n\n[[À COMPLÉTER : indications plus précises sur les transports, horaires, coût approximatif du taxi depuis la gare routière]]",
+    "priorite": 9
+  },
+  {
+    "cle": "acces_depuis_bouake",
+    "categorie": "acces",
+    "question": "Comment venir depuis le centre de Bouaké ?",
+    "mots_cles": "bouake, gare, taxi, centre ville, brobo, distance, proche, depuis bouake, comment aller, transport local",
+    "reponse": "Depuis le centre de Bouaké, prenez l'axe de Brobo. Le monastère se situe juste après le Centre Diocésain Saint Joseph, sur la gauche en montant — un grand portail vous accueille.\n\nEn taxi depuis le centre-ville, comptez une courte course. Précisez au chauffeur « Monastère Sainte-Marie, après le Centre Diocésain Saint Joseph ».\n\n[[À COMPLÉTER : durée et prix indicatif de la course en taxi]]",
+    "priorite": 8
+  },
+  {
+    "cle": "acces_arrivee_horaires",
+    "categorie": "acces",
+    "question": "À quelle heure puis-je arriver ? Et partir ?",
+    "mots_cles": "arrivee, depart, heure, check-in, check-out, tard, tot, portier, accueil, portail, fermer",
+    "reponse": "L'arrivée se fait idéalement en journée, et le départ avant la fin de matinée.\n\n[[À COMPLÉTER PAR LE FRÈRE HÔTELIER : heures précises d'ouverture du portail et de la porterie, heure limite d'arrivée, heure de libération de la chambre]]\n\nSi vous devez arriver tard, prévenez-nous : nous trouvons toujours un arrangement. Mais passé la tombée de la nuit, l'accès est plus difficile à repérer et le silence de la maison est déjà installé.",
+    "priorite": 8
+  },
+  {
+    "cle": "contacts",
+    "categorie": "contacts",
+    "question": "Comment vous joindre ? Quels sont les numéros ?",
+    "mots_cles": "contact, telephone, numero, joindre, appeler, whatsapp, mail, email, adresse, courriel",
+    "reponse": "Monastère Bénédictin Sainte-Marie — Bouaké\n\nAccueil / porterie : +225 07 47 52 05 57\nHôtellerie (frère hôtelier) : +225 07 97 00 80 52\nBoutique : +225 07 78 32 17 37\nCourriel : info@benedictinsbouake.com\nSite : https://benedictinsbouake.com\n\nPour toute question sur un séjour, le numéro de l'hôtellerie (07 97 00 80 52) est le bon : c'est aussi celui sur lequel vous m'écrivez en ce moment.",
+    "priorite": 10
+  },
+  {
+    "cle": "urgence",
+    "categorie": "contacts",
+    "question": "J'ai une urgence, que faire ?",
+    "mots_cles": "urgence, urgent, maladie, accident, hopital, malade, secours, aide, danger, mort, deces, immediat",
+    "reponse": "Pour toute urgence, appelez directement l'accueil du monastère au +225 07 47 52 05 57 ou l'hôtellerie au +225 07 97 00 80 52 : un frère vous répondra et prendra les dispositions nécessaires.\n\nEn cas d'urgence médicale grave, appelez d'abord les secours (Samu / pompiers) puis prévenez le monastère, afin que nous puissions vous orienter et vous accompagner vers le centre hospitalier le plus proche.\n\n[[À COMPLÉTER : coordonnées exactes du CHU ou de l'hôpital de Bouaké à privilégier, et numéros d'urgence locaux]]\n\nN'attendez pas pour appeler : la journée, les frères travaillent de 8 h à 12 h et de 15 h à 17 h, mais la porterie reste joignable.",
+    "priorite": 10
+  },
+  {
+    "cle": "sante_paludisme",
+    "categorie": "sante",
+    "question": "Faut-il prendre un traitement contre le paludisme ?",
+    "mots_cles": "paludisme, malaria, moustique, moustiquaire, traitement, vaccin, sante, maladie, fievre, medicament, prophylaxie",
+    "reponse": "La Côte d'Ivoire est une zone de paludisme. Nous vous recommandons vivement de consulter votre médecin avant le départ pour une prophylaxie adaptée, et d'emporter une protection contre les moustiques (répulsif, vêtements longs le soir).\n\nLes chambres sont équipées de moustiquaires et ventilées : c'est la meilleure protection la nuit.\n\nApportez également vos médicaments habituels : la pharmacie la plus proche se trouve à Bouaké, mais elle n'a pas toujours tout.\n\n[[À COMPLÉTER : recommandations sanitaires propres au monastère, centre de santé le plus proche]]",
+    "priorite": 7
+  },
+  {
+    "cle": "groupes_sessions",
+    "categorie": "groupes",
+    "question": "Accueillez-vous les groupes et les sessions ?",
+    "mots_cles": "groupe, session, paroisse, mouvement, association, nombreux, plusieurs, seminaires, recollections, journee, capacite",
+    "reponse": "Oui. L'hôtellerie accueille régulièrement des groupes venus de toute la Côte d'Ivoire : paroisses, mouvements d'Église, sessions de formation, récollections, équipes de travail.\n\nPour un groupe, il est préférable de nous écrire suffisamment à l'avance, en précisant le nombre de participants, la répartition hommes/femmes, les dates et l'intention de la session (enseignements, silence, travail).\n\n[[À COMPLÉTER PAR LE FRÈRE HÔTELIER : capacité maximale pour un groupe, salles disponibles, conditions particulières, possibilité de repas pris en commun ou à part]]",
+    "priorite": 8
+  },
+  {
+    "cle": "groupes_prix_groupe",
+    "categorie": "groupes",
+    "question": "Y a-t-il un tarif de groupe ?",
+    "mots_cles": "tarif groupe, prix groupe, forfait, reduction, plusieurs personnes, cout",
+    "reponse": "Pour les groupes, nous convenons ensemble d'une participation adaptée à la taille du groupe et à la durée de la session.\n\n[[À COMPLÉTER PAR LE FRÈRE HÔTELIER : grille de participation pour les groupes, ce qui est inclus (draps, repas, salle) et ce qui ne l'est pas]]\n\nLe plus simple est de nous exposer votre projet : nous répondrons avec une proposition concrète.",
+    "priorite": 5
+  },
+  {
+    "cle": "vie_communaute",
+    "categorie": "vie_monastique",
+    "question": "Combien de moines vivez-vous ? Quelle est votre journée ?",
+    "mots_cles": "moines, nombre, communaute, combien, journee, emploi du temps, travail, priere, vie, regle, abbé, prieur",
+    "reponse": "La communauté compte actuellement une vingtaine de membres, dont quinze profès perpétuels, trois profès temporaires et un novice.\n\nLe monastère a été fondé en 1960 par les moines de Toumliline, au Maroc. C'est le seul monastère masculin de l'Ordre bénédictin en Côte d'Ivoire, membre de la Congrégation Subiaco Mont-Cassin. Depuis 2011, il est lié par une alliance à l'Abbaye Saint-Benoît d'En Calcat, en France.\n\nLa journée est rythmée par la prière (sept offices par jour) et le travail : le matin de 8 h à 12 h, l'après-midi de 15 h à 17 h, chaque frère rejoint son emploi. Après les Vêpres, une heure est consacrée à la lecture priante de la Parole de Dieu (lectio divina).\n\nLes frères croient que le Prieur tient la place du Christ : c'est à lui qu'ils rendent compte et qu'ils demandent le discernement.",
+    "priorite": 8
+  },
+  {
+    "cle": "vie_lectio",
+    "categorie": "vie_monastique",
+    "question": "Qu'est-ce que la lectio divina ? Puis-je être accompagné ?",
+    "mots_cles": "lectio, divina, lecture, parole, bible, meditation, accompagnement, pere spirituel, direction, ecoute, entretien, confession",
+    "reponse": "La lectio divina est la lecture priante de la Parole de Dieu : on lit lentement un texte, on le rumine, on s'y arrête, on le laisse rejoindre sa vie. Chaque jour, après les Vêpres, les frères y consacrent une heure.\n\nSi vous souhaitez être accompagné spirituellement pendant votre séjour, un frère peut vous recevoir pour un entretien : demandez-le simplement au frère hôtelier. Vous pouvez aussi demander le sacrement de réconciliation.\n\nBeaucoup de retraitants ne demandent rien et se contentent du silence. C'est très bien ainsi.",
+    "priorite": 7
+  },
+  {
+    "cle": "vocation",
+    "categorie": "vocation",
+    "question": "Comment devenir moine ? Je me sens appelé.",
+    "mots_cles": "vocation, devenir moine, moine, entrer, noviciat, postulat, appel, suivre, christ, vie religieuse, discernement",
+    "reponse": "Saint Benoît ouvre sa Règle par cette question : « Qui est l'homme qui veut la vie, qui désire voir des jours heureux ? » Si cette question vous travaille, c'est déjà une grâce à accueillir.\n\nLe chemin commence ordinairement par des séjours à l'hôtellerie : venir, voir, prier avec les frères, parler avec le Père Maître des novices. Puis viennent le postulat, le noviciat, les vœux temporaires et la profession perpétuelle. Rien ne se presse : on prend le temps de discerner.\n\nThomas Merton disait qu'un moine doit être « une personne bien équilibrée, capable de vivre dans un groupe, simplement et charitablement, avec de solides vertus et une aptitude à servir ».\n\nNous vous invitons à écrire au monastère ou à venir passer quelques jours. Un frère vous écoutera.",
+    "priorite": 8
+  },
+  {
+    "cle": "oblature",
+    "categorie": "vocation",
+    "question": "Qu'est-ce que l'oblature bénédictine ?",
+    "mots_cles": "oblat, oblature, laic, engagement, charte, associe, rattacher, spiritualite",
+    "reponse": "L'oblature est un lien spirituel qui unit un chrétien — homme ou femme, laïc, prêtre ou pasteur — à une communauté bénédictine, sans quitter sa vie ordinaire. L'oblat s'engage à vivre l'Évangile dans l'esprit de la Règle de saint Benoît : prière, travail, accueil, conversion du cœur.\n\nPlusieurs laïcs sont déjà engagés dans l'oblature auprès de notre monastère, et d'autres sont en cheminement.\n\n[[À COMPLÉTER : nom du frère référent pour l'oblature et modalités de contact]]",
+    "priorite": 6
+  },
+  {
+    "cle": "formation_studium",
+    "categorie": "formation",
+    "question": "Qu'est-ce que le Studium Saint-Benoît ?",
+    "mots_cles": "studium, formation, philosophie, theologie, etudiant, cours, universite, licence, ucao, etudes, inscription",
+    "reponse": "Depuis plusieurs années, nous accueillons des moines et des moniales d'Afrique de l'Ouest et d'Afrique Centrale pour une formation en philosophie et en théologie.\n\nLe Studium est en lien avec la faculté de philosophie de l'Université Alassane Ouattara (Bouaké) et sous tutelle académique de la faculté de théologie de l'UCAO, qui délivre la licence en théologie (baccalauréat canonique) à nos étudiants.\n\n[[À COMPLÉTER : conditions d'admission, calendrier, frais de scolarité, contact du responsable du Studium]]",
+    "priorite": 6
+  },
+  {
+    "cle": "boutique",
+    "categorie": "boutique",
+    "question": "Que vend la boutique du monastère ?",
+    "mots_cles": "boutique, acheter, produit, confiture, miel, the, gambie, moringa, vin, nougatine, prix, commander, magasin",
+    "reponse": "La vie économique du monastère est assurée par le travail des mains, comme le demande saint Benoît : élevage de poules pondeuses, confiturerie, thé de Gambie, moringa, vins de fruits…\n\nQuelques produits de la boutique :\n• Confitures (pamplemousse, orange, ananas, mangue, papaye) — 2 000 F CFA\n• Miel non brûlé (60 cl) — 3 000 F CFA\n• Nougatine — 1 500 F CFA\n• Thé de Gambie — 1 200 F CFA\n\nBoutique : +225 07 78 32 17 37. La boutique en ligne est accessible sur le site benedictinsbouake.com.",
+    "priorite": 6
+  },
+  {
+    "cle": "reservation_marche_ordre",
+    "categorie": "sejour",
+    "question": "Comment réserver ?",
+    "mots_cles": "reserver, reservation, demande, booking, disponibilite, place, libre, quand, processus, etape, delai, reponse",
+    "reponse": "Rien de plus simple : écrivez-nous ici-même, sur le numéro de l'hôtellerie (07 97 00 80 52), ou par courriel à info@benedictinsbouake.com.\n\nIndiquez-nous : vos nom et prénom, votre région ou pays, la nature du séjour (retraite, repos, couple, groupe, mission de travail), la période souhaitée (arrivée et départ), le nombre de personnes, et tout besoin particulier (régime alimentaire, accessibilité, participation aux offices).\n\nJe recueille votre demande et je la transmets aux pères et frères responsables de l'hôtellerie. Ils examinent les disponibilités dans le calme et vous répondent directement pour confirmer votre venue.",
+    "priorite": 10
+  },
+  {
+    "cle": "reservation_delai_reponse",
+    "categorie": "sejour",
+    "question": "Sous combien de temps aurez-vous une réponse ?",
+    "mots_cles": "delai, reponse, combien de temps, attendre, quand, confirmation, nouvelle, rapide",
+    "reponse": "Votre demande est transmise immédiatement aux frères responsables de l'hôtellerie. Ils vous répondent en général dans les 24 à 48 heures.\n\nLe rythme de la maison est celui de la prière : de 8 h à 12 h et de 15 h à 17 h, les frères sont au travail, et la communauté se rassemble à l'église à heures fixes. Une demande déposée le soir reçoit donc sa réponse le lendemain matin, au plus tard.\n\nSi votre arrivée est très proche, dites-le : nous faisons au plus vite.",
+    "priorite": 7
+  },
+  {
+    "cle": "confidentialite_donnees",
+    "categorie": "divers",
+    "question": "Que faites-vous de mes données personnelles ?",
+    "mots_cles": "donnees, confidentialite, rgpd, vie privee, secret, informations personnelles, supprimer, effacer",
+    "reponse": "Les informations que vous nous confiez servent uniquement à organiser votre séjour : elles sont conservées dans le registre de l'hôtellerie, accessible aux seuls frères responsables, et ne sont jamais cédées ni revendues.\n\nSi vous souhaitez les consulter, les corriger ou les faire effacer, il suffit de nous l'écrire : nous le ferons volontiers.",
+    "priorite": 6
+  },
+  {
+    "cle": "salutation_pax",
+    "categorie": "divers",
+    "question": "Que signifie « Pax » et pourquoi commencez-vous ainsi ?",
+    "mots_cles": "pax, paix, salut, salutation, benoit, pourquoi, dire, bonjour, signification",
+    "reponse": "« Pax » signifie la paix, en latin. C'est la salutation traditionnelle des monastères bénédictins : elle rappelle que le Christ, en ressuscitant, a dit à ses disciples « La paix soit avec vous ».\n\nVous l'entendrez au monastère, et vous verrez souvent les initiales Pax sur les objets et les courriers de la maison. C'est une manière de dire : ici, vous êtes attendu, et vous êtes en paix.",
+    "priorite": 5
+  },
+  {
+    "cle": "internet_reseau",
+    "categorie": "divers",
+    "question": "Y a-t-il du réseau, du Wi-Fi ou de l'électricité ?",
+    "mots_cles": "internet, wifi, connexion, reseau, electricite, courant, edf, delestage, coupure, recharge, telephoner, 4g",
+    "reponse": "Le monastère est alimenté en électricité et couvert par les réseaux de téléphonie mobile. Comme partout dans la région, des coupures peuvent survenir : il est prudent d'emporter une lampe de poche et, si vous travaillez, une batterie externe.\n\nBeaucoup d'hôtes découvrent que la déconnexion fait partie du bienfait du séjour. Nous vous invitons à en profiter.\n\n[[À COMPLÉTER : le Wi-Fi est-il proposé aux hôtes, et dans quels lieux ?]]",
+    "priorite": 6
+  },
+  {
+    "cle": "climat_saison",
+    "categorie": "divers",
+    "question": "Quel climat ? Quelle est la meilleure saison ?",
+    "mots_cles": "climat, saison, pluie, temperature, chaud, froid, quand venir, meteo, harmonattan, periode",
+    "reponse": "Bouaké bénéficie d'un climat tropical de savane, plus sec et plus respirable que sur la côte. Les températures restent élevées toute l'année, avec des nuits souvent douces.\n\nOn distingue une saison des pluies et une saison sèche, marquée par l'harmattan, un vent sec venu du nord qui apporte poussière et fraîcheur relative en décembre-janvier.\n\nChaque saison a sa beauté : la saison des pluies verdit abondamment les jardins, la saison sèche offre des soirées claires. Venez quand vous pouvez.",
+    "priorite": 5
+  },
+  {
+    "cle": "don_soutien",
+    "categorie": "divers",
+    "question": "Comment soutenir le monastère ?",
+    "mots_cles": "don, soutenir, aider, soutien, financer, sponsor, parrainage, contribuer, solidarite",
+    "reponse": "Vous pouvez soutenir la communauté de plusieurs manières : par la prière, qui est le premier service que nous demandons ; par l'achat des produits du travail de nos mains à la boutique ; par un don ; ou en faisant connaître l'hôtellerie autour de vous.\n\nPour un don ou un projet particulier, écrivez à info@benedictinsbouake.com : la communauté vous répondra et vous dira ses besoins du moment.\n\n[[À COMPLÉTER : coordonnées bancaires / Mobile Money pour les dons, si la communauté souhaite les communiquer]]",
+    "priorite": 5
+  }
+]

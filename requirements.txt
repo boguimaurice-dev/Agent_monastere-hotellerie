@@ -1,0 +1,20 @@
+# ---------------------------------------------------------------------------
+# Hôtellerie & Accueil — Monastère Sainte-Marie de Bouaké
+#
+# Ce fichier est vide, et c'est volontaire.
+#
+# L'application n'utilise que la bibliothèque standard de Python :
+# sqlite3, http.server, smtplib, urllib, hashlib, hmac, secrets, json, csv…
+#
+# Il n'y a donc :
+#   - rien à installer,
+#   - aucune dépendance à mettre à jour,
+#   - aucune incompatibilité de versions à surveiller,
+#   - aucun risque qu'un paquet abandonné ne casse l'application.
+#
+# C'est un choix délibéré pour un monastère : le système doit pouvoir
+# fonctionner dix ans sans maintenance technique, sur une petite machine,
+# avec une connexion intermittente.
+#
+# Prérequis : Python 3.8 ou plus récent.
+# ---------------------------------------------------------------------------
