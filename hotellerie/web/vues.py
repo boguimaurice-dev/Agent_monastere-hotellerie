@@ -767,16 +767,27 @@ def whatsapp_page(db, user, csrf: str, message: str = "", erreur: str = "") -> s
         except ValueError:
             dernier = None
 
+    diagnostic_fait = bool(dernier and dernier.get("etapes"))
+    essentiels = [e for e in (dernier or {}).get("etapes", []) or []
+                  if "Secret" not in (e.get("etape") or "")]
+    manquants = [e for e in essentiels if not e.get("ok")]
+    tout_vert = diagnostic_fait and not manquants
+
     etapes_html = ""
-    if dernier and dernier.get("etapes"):
+    if diagnostic_fait:
         elements = []
         for e in dernier["etapes"]:
             marque = "✓" if e.get("ok") else "✗"
             couleur = "color:#33502e" if e.get("ok") else "color:#7a2c20"
             elements.append(f'<li><strong style="{couleur}">{marque} {esc(e.get("etape"))}</strong>'
                             f' — {esc(e.get("detail"))}</li>')
+        if tout_vert:
+            verdict = ('<p><span class="badge b-envoye">Prêt : oui — tout est vert</span></p>')
+        else:
+            verdict = (f'<p><span class="badge b-en_attente">Prêt : non — '
+                       f'{len(manquants)} point(s) à régler</span></p>')
         etapes_html = (f'<p class="petit muted">Relevé du {esc(dernier.get("horodatage", ""))}</p>'
-                       f'<ul>{"".join(elements)}</ul>')
+                       + verdict + f'<ul>{"".join(elements)}</ul>')
         if dernier.get("compte"):
             compte = dernier["compte"]
             etapes_html += ("<p>Compte joint : <strong>" + esc(compte.get("verified_name") or "—")
@@ -821,9 +832,21 @@ def whatsapp_page(db, user, csrf: str, message: str = "", erreur: str = "") -> s
       libre que dans les 24 h qui suivent un message de l'hôte.</li>
 </ol>"""
 
-    if pret:
-        bandeau = "WhatsApp est configuré : le webhook peut recevoir les messages."
+    if tout_vert:
+        classe_bandeau = "alerte-ok"
+        bandeau = ("Tout est vert : WhatsApp est prêt. Écrivez « Bonjour » depuis "
+                   + whatsapp.afficher_numero(numero_essai)
+                   + " au numéro WhatsApp Business pour l'essai réel.")
+    elif diagnostic_fait:
+        noms = ", ".join(e.get("etape") or "?" for e in manquants) or "—"
+        classe_bandeau = "alerte-info"
+        bandeau = f"Il reste {len(manquants)} point(s) à régler : {noms}."
+    elif pret:
+        classe_bandeau = "alerte-ok"
+        bandeau = ("Réglages présents. Lancez « Vérifier le compte » pour confirmer "
+                   "que tout est vert.")
     else:
+        classe_bandeau = "alerte-info"
         bandeau = ("WhatsApp n’est pas encore configuré : les réponses restent dans la "
                    "file d’attente, rien n’est perdu.")
     if file_attente:
@@ -832,7 +855,7 @@ def whatsapp_page(db, user, csrf: str, message: str = "", erreur: str = "") -> s
     contenu = f"""
 <h1>Brancher WhatsApp</h1>
 <p class="sous-titre">Meta Cloud API — le numéro de l'hôtellerie répond aux hôtes, 24 h/24.</p>
-<div class="alerte {"alerte-ok" if pret else "alerte-info"}">
+<div class="alerte {classe_bandeau}">
   {esc(bandeau)}
 </div>
 <div class="grille grille-2">

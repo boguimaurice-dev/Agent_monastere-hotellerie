@@ -220,7 +220,11 @@ def cmd_whatsapp(args) -> int:
             print(f"  Compte : {compte.get('verified_name') or '—'} · "
                   f"{compte.get('display_phone_number') or '—'} · "
                   f"qualité {compte.get('quality_rating') or '—'}")
-        print("  Prêt : " + ("oui" if releve["pret"] else "non"))
+        if releve["pret"]:
+            print("  → TOUT EST VERT : WhatsApp est prêt.")
+            print("    Écrivez « Bonjour » depuis votre téléphone au numéro WhatsApp Business.")
+        else:
+            print("  → Il reste des points à régler : voyez les ✗ ci-dessus.")
         return 0 if releve["pret"] else 1
 
     if args.envoyer:
