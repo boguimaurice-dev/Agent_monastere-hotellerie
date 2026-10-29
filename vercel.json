@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "functions": {
-    "api/demo.py": {"includeFiles": "base_connaissances.json", "maxDuration": 10}
-  },
+  "builds": [
+    {"src": "api/demo.py", "use": "@vercel/python", "config": {"includeFiles": "{hotellerie/**,base_connaissances.json}"}}
+  ],
   "rewrites": [
     {"source": "/((?!api/demo).*)", "destination": "/api/demo?__route=$1"}
   ]
