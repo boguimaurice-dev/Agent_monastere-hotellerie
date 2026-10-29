@@ -83,7 +83,7 @@ class handler(Handler):
         super()._router()
 
     def _page(self, contenu, code=200):
-        contenu = contenu.replace('<a href="/deconnexion">quitter</a>', 'démo publique')
+        contenu = contenu.replace('<a href="/deconnexion">quitter</a>', '<span class="petit muted">Démo</span>')
         contenu = contenu.replace(
             '<main class="conteneur">',
             '<main class="conteneur"><div class="alerte alerte-info">'

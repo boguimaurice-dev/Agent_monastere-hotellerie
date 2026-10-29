@@ -117,9 +117,8 @@ def tableau_de_bord(db, user, message: str = "", erreur: str = "") -> str:
         alertes.append(f'<div class="alerte alerte-info">{en_attente_wa} message(s) '
                        f'WhatsApp attendent leur départ ou ont échoué. <a href="/whatsapp">Voir la file</a></div>')
 
-    lignes = [[_lien_demande(d), esc(_hote(d)), esc(d.get("provenance") or "—"),
-               esc(_periode(d)), esc(d.get("nb_personnes") or 1),
-               esc(metier.nature(d.get("type_sejour"))),
+    lignes = [[_lien_demande(d), esc(_hote(d)), esc(_periode(d)),
+               esc(d.get("nb_personnes") or 1),
                badge(d.get("statut"), metier.libelle_statut(d.get("statut")))]
               for d in en_attente]
     lignes_arrivees = [[esc(_hote(d)), esc((metier.chambre(db, d.get('chambre_id')) or {}).get('nom') or 'à attribuer'),
@@ -168,7 +167,7 @@ def tableau_de_bord(db, user, message: str = "", erreur: str = "") -> str:
   <div>
     <section class="carte"><div class="section-head"><h2>Demandes en attente</h2><a class="section-link" href="/demandes?statut=en_attente">Tout voir →</a></div>
       <p class="section-meta">Les dernières demandes à examiner · 8 maximum</p>
-      {tableau(["Référence", "Hôte", "Provenance", "Période", "Pers.", "Nature", "Statut"], lignes, "Aucune demande en attente. La maison est en paix.")}
+      {tableau(["Référence", "Hôte", "Période", "Pers.", "Statut"], lignes, "Aucune demande en attente. La maison est en paix.")}
       <div class="barre-actions"><a class="btn btn-secondaire btn-mini" href="/demandes/nouveau">+ Saisir une demande</a></div></section>
     <div class="dashboard-two">
       {carte("Arrivées du jour", tableau(["Hôte", "Chambre", "Période"], lignes_arrivees, "Aucune arrivée aujourd’hui."))}

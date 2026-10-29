@@ -50,7 +50,7 @@ with tempfile.TemporaryDirectory(prefix="hotellerie-apercu-") as dossier:
 
         def _page(self, contenu, code=200):
             contenu = contenu.replace('<a href="/deconnexion">quitter</a>',
-                                      'aperçu de démonstration')
+                                      '<span class="petit muted">Démo</span>')
             contenu = contenu.replace(
                 '<main class="conteneur">',
                 '<main class="conteneur"><div class="alerte alerte-info">'
