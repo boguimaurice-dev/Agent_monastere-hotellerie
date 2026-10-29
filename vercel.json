@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "functions": {
+    "api/demo.py": {"includeFiles": "base_connaissances.json", "maxDuration": 10}
+  },
+  "rewrites": [
+    {"source": "/((?!api/demo).*)", "destination": "/api/demo?__route=$1"}
+  ]
+}

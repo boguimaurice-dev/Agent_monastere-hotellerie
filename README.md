@@ -403,3 +403,18 @@ Le cahier des charges (`SPECIFICATION.md`) décrit l'extension prévue aux
 autres services du monastère : parc informatique et maintenance, stocks de
 provende, et centre de formation du Studium. L'architecture a été conçue pour
 que ces pôles viennent s'y ajouter sans rien réécrire.
+
+### Démonstration Vercel (pas une mise en production)
+
+Le projet Vercel utilise `api/demo.py` et `vercel.json` pour présenter l'interface
+et le simulateur avec des données **fictives, publiques et temporaires**. La base
+SQLite est isolée dans le répertoire temporaire de chaque processus : elle peut
+être réinitialisée ou différer d'une requête à l'autre. Les écrans sont en
+lecture seule à l'exception du simulateur ; les webhooks, l'API, la configuration
+et tous les envois externes sont désactivés. Ne saisissez ni données personnelles
+ni secrets dans cette démonstration.
+
+Ce point d'entrée ne remplace pas le serveur normal. Une exploitation réelle
+exige notamment une base persistante, un hébergement adapté au serveur, une
+authentification et des sauvegardes, ainsi que la validation des informations
+et des canaux décrite dans `ROADMAP_SAAS.md`.

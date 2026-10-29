@@ -12,7 +12,7 @@ import json
 import urllib.parse
 
 from .. import config, knowledge, metier
-from .templates import badge, carte, esc, page, tableau
+from .templates import badge, carte, esc, icone, page, tableau
 
 
 def _csrf(jeton: str) -> str:
@@ -82,8 +82,6 @@ def connexion(message: str = "", erreur: str = "") -> str:
 def tableau_de_bord(db, user, message: str = "", erreur: str = "") -> str:
     s = metier.stats(db)
     manquantes = len(knowledge.fiches_a_completer(db))
-    relais = db.lignes(
-        "SELECT * FROM conversations WHERE humain_requis = 1 ORDER BY maj DESC LIMIT 5")
     en_attente = db.lignes(
         "SELECT * FROM demandes WHERE statut = 'en_attente' ORDER BY date_arrivee LIMIT 8")
     auj = metier.aujourdhui().isoformat()
@@ -92,12 +90,17 @@ def tableau_de_bord(db, user, message: str = "", erreur: str = "") -> str:
     departs = db.lignes(
         "SELECT * FROM demandes WHERE date_depart = ? AND statut IN ('acceptee','confirmee')", (auj,))
 
-    cartes = f"""<div class="grille grille-4">
-  <div class="carte"><div class="chiffre">{s['en_attente']}<small>Demandes en attente</small></div></div>
-  <div class="carte"><div class="chiffre">{s['arrivees_jour']}<small>Arrivées aujourd'hui</small></div></div>
-  <div class="carte"><div class="chiffre">{s['departs_jour']}<small>Départs aujourd'hui</small></div></div>
-  <div class="carte"><div class="chiffre">{s['chambres_actives']}<small>Chambres actives ({s['capacite_totale']} places)</small></div></div>
-</div>"""
+    def statistique(libelle, valeur, precision, pictogramme):
+        return (f'<div class="carte stat-card"><div class="stat-top"><span class="stat-label">{esc(libelle)}</span>'
+                f'<span class="stat-icon">{icone(pictogramme)}</span></div>'
+                f'<div class="chiffre">{esc(valeur)}</div><div class="stat-foot">{esc(precision)}</div></div>')
+
+    cartes = '<div class="grille grille-4">' + ''.join([
+        statistique("Demandes en attente", s['en_attente'], "À examiner par l’équipe", "demandes"),
+        statistique("Arrivées du jour", s['arrivees_jour'], "Séjours acceptés ou confirmés", "arrivee"),
+        statistique("Départs du jour", s['departs_jour'], "Séjours acceptés ou confirmés", "depart"),
+        statistique("Chambres actives", s['chambres_actives'], f"{s['capacite_totale']} places au total", "maison"),
+    ]) + '</div>'
 
     alertes = []
     if manquantes:
@@ -106,53 +109,82 @@ def tableau_de_bord(db, user, message: str = "", erreur: str = "") -> str:
     if s["notifications_echouees"]:
         alertes.append(f'<div class="alerte alerte-info">{s["notifications_echouees"]} transmission(s) '
                        f'non partie(s). <a href="/notifications">Voir le motif</a></div>')
-    if relais:
-        alertes.append(f'<div class="alerte alerte-ko">{len(relais)} échange(s) attendent un frère. '
+    if s["humain_requis"]:
+        alertes.append(f'<div class="alerte alerte-ko">{s["humain_requis"]} échange(s) attendent un frère. '
                        f'<a href="/conversations">Prendre le relais</a></div>')
-    from ..channels import whatsapp as _wa
-    en_attente_wa = _wa.file_attente(db, 200)
+    en_attente_wa = int(db.valeur("SELECT COUNT(*) FROM envois WHERE statut IN ('en_attente', 'echoue')", defaut=0) or 0)
     if en_attente_wa:
-        alertes.append(f'<div class="alerte alerte-info">{len(en_attente_wa)} message(s) '
-                       f'WhatsApp attendent leur départ. <a href="/whatsapp">Voir la file</a></div>')
+        alertes.append(f'<div class="alerte alerte-info">{en_attente_wa} message(s) '
+                       f'WhatsApp attendent leur départ ou ont échoué. <a href="/whatsapp">Voir la file</a></div>')
 
     lignes = [[_lien_demande(d), esc(_hote(d)), esc(d.get("provenance") or "—"),
                esc(_periode(d)), esc(d.get("nb_personnes") or 1),
                esc(metier.nature(d.get("type_sejour"))),
                badge(d.get("statut"), metier.libelle_statut(d.get("statut")))]
               for d in en_attente]
+    lignes_arrivees = [[esc(_hote(d)), esc((metier.chambre(db, d.get('chambre_id')) or {}).get('nom') or 'à attribuer'),
+                        esc(_periode(d))] for d in arrivees]
+    lignes_departs = [[esc(_hote(d)), esc((metier.chambre(db, d.get('chambre_id')) or {}).get('nom') or '—'),
+                       esc(_periode(d))] for d in departs]
 
-    systeme = []
-    systeme.append("Agent : " + ("actif" if config.drapeau_parametre(db, "agent_actif", True) else "en relais humain"))
+    agent_actif = config.drapeau_parametre(db, "agent_actif", True)
     wa = bool(config.parametre(db, "wa_token", "") and config.parametre(db, "wa_phone_number_id", ""))
-    systeme.append("WhatsApp : " + ("jeton et identifiant présents ; webhook et échange réel à vérifier" if wa
-                                     else "non configuré (les messages ne partent pas)"))
     smtp = bool(config.parametre(db, "smtp_hote", ""))
-    systeme.append("Courriel : " + ("configuré" if smtp else "non configuré"))
-    systeme.append("Réponses : base de connaissances, sans génération IA")
-
-    etat_html = ("<ul>" + "".join(f"<li>{esc(x)}</li>" for x in systeme) + "</ul>"
-                 + f'<p class="petit muted">Version {esc(config.VERSION)} · '
-                   '<a href="/sante">santé technique (JSON)</a> · '
-                   "<a href=\"/simulateur\">essayer l’agent</a></p>")
+    etats = [
+        ("Agent : " + ("actif" if agent_actif else "en relais humain"), not agent_actif),
+        ("WhatsApp : " + ("jeton et identifiant présents ; webhook et échange réel à vérifier" if wa
+                         else "non configuré (les messages ne partent pas)"), not wa),
+        ("Courriel : " + ("configuré" if smtp else "non configuré"), not smtp),
+        ("Réponses : base de connaissances, sans génération IA", False),
+    ]
+    etat_html = '<div class="dashboard-system">' + ''.join(
+        f'<div class="system-line"><span class="system-dot{" warn" if attention else ""}"></span>{esc(texte)}</div>'
+        for texte, attention in etats) + '</div>'
+    etat_html += (f'<p class="petit muted">Version {esc(config.VERSION)} · '
+                  '<a href="/sante">santé technique (JSON)</a></p>')
+    illustration = '''<svg viewBox="0 0 200 160" fill="none" aria-hidden="true">
+      <circle cx="100" cy="80" r="70" fill="#d8ebd4"/><circle cx="100" cy="80" r="57" stroke="#b2d5b7"/>
+      <path d="M61 133V80a39 39 0 0 1 78 0v53M73 133V81a27 27 0 0 1 54 0v52M91 133v-28a9 9 0 0 1 18 0v28M49 133h102M100 30v20M94 36h12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+      <path d="M30 118c11 0 19 5 25 14M170 118c-11 0-19 5-25 14M28 102c9 2 16 8 20 16M172 102c-9 2-16 8-20 16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </svg>'''
     contenu = f"""
-<h1>Tableau de bord</h1>
-<p class="sous-titre">Bienvenue, {esc(user.get('nom') or user.get('login'))}. Voici l'état de la maison aujourd'hui.</p>
-{''.join(alertes)}
-{cartes}
-{carte("Demandes en attente de discernement",
-       tableau(["Référence", "Hôte", "Provenance", "Période", "Pers.", "Nature", "Statut"],
-               lignes, "Aucune demande en attente. La maison est en paix."),
-       '<div class="barre-actions"><a class="btn btn-secondaire" href="/demandes?statut=en_attente">Toutes les demandes</a>'
-       '<a class="btn" href="/demandes/nouveau">Saisir une demande</a></div>')}
-<div class="grille grille-2">
-  {carte("Arrivées du jour", tableau(["Hôte", "Chambre", "Période"],
-      [[esc(_hote(d)), esc((metier.chambre(db, d.get('chambre_id')) or {}).get('nom') or 'à attribuer'), esc(_periode(d))] for d in arrivees],
-      "Aucune arrivée aujourd'hui."))}
-  {carte("Départs du jour", tableau(["Hôte", "Chambre", "Période"],
-      [[esc(_hote(d)), esc((metier.chambre(db, d.get('chambre_id')) or {}).get('nom') or '—'), esc(_periode(d))] for d in departs],
-      "Aucun départ aujourd'hui."))}
+<div class="accueil-heading">
+  <div><div class="kicker">Hôtellerie · Monastère Sainte-Marie</div>
+    <h1>Bonjour, {esc(user.get('nom') or user.get('login'))}.</h1>
+    <p class="sous-titre">Bienvenue dans votre espace d’accueil. Voici la vie de la maison aujourd’hui.</p></div>
+  <div class="date-pill">{esc(metier.format_date_longue(auj))}</div>
 </div>
-{carte("État du système", etat_html)}
+{''.join(alertes)}
+<section class="hero" aria-labelledby="hero-title">
+  <div class="hero-content"><span class="hero-kicker"><span class="dot"></span> Un accueil à visage humain</span>
+    <h2 id="hero-title">Chaque hôte est une rencontre.</h2>
+    <p>Un espace pour suivre les demandes, accompagner les échanges et préparer les séjours en toute sérénité.</p>
+    <div class="barre-actions"><a class="btn" href="/demandes/nouveau">+ &nbsp; Nouvelle demande</a>
+    <a class="btn btn-secondaire" href="/simulateur">Découvrir l’agent &nbsp; →</a></div></div>
+  <div class="hero-illustration">{illustration}</div>
+</section>
+{cartes}
+<div class="dashboard-grid">
+  <div>
+    <section class="carte"><div class="section-head"><h2>Demandes en attente</h2><a class="section-link" href="/demandes?statut=en_attente">Tout voir →</a></div>
+      <p class="section-meta">Les dernières demandes à examiner · 8 maximum</p>
+      {tableau(["Référence", "Hôte", "Provenance", "Période", "Pers.", "Nature", "Statut"], lignes, "Aucune demande en attente. La maison est en paix.")}
+      <div class="barre-actions"><a class="btn btn-secondaire btn-mini" href="/demandes/nouveau">+ Saisir une demande</a></div></section>
+    <div class="dashboard-two">
+      {carte("Arrivées du jour", tableau(["Hôte", "Chambre", "Période"], lignes_arrivees, "Aucune arrivée aujourd’hui."))}
+      {carte("Départs du jour", tableau(["Hôte", "Chambre", "Période"], lignes_departs, "Aucun départ aujourd’hui."))}
+    </div>
+  </div>
+  <div>
+    <section class="carte agent-card"><div class="agent-mark">{icone('simulateur')}</div>
+      <h2>Votre agent d’accueil</h2><p>Une aide pour renseigner les visiteurs et transmettre les situations qui demandent une présence humaine.</p>
+      <div class="agent-status"><span class="system-dot{' warn' if not agent_actif else ''}"></span>{'Agent actif' if agent_actif else 'Relais humain activé'}</div>
+      <a class="btn btn-secondaire" href="/simulateur">Essayer l’agent &nbsp; →</a>
+    </section>
+    <section class="carte"><div class="section-head"><h2>État du système</h2><a class="section-link" href="/parametres">Paramètres →</a></div>
+      <p class="section-meta">Configuration et points de vigilance</p>{etat_html}</section>
+  </div>
+</div>
 """
     return page("Tableau de bord", contenu, user, "bord", message, erreur)
 
