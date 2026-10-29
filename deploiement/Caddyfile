@@ -1,0 +1,28 @@
+# ---------------------------------------------------------------------------
+# Caddy — HTTPS automatique devant le tableau de bord et le webhook WhatsApp
+#
+#   sudo cp deploiement/Caddyfile /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+#
+# Remplacer hotellerie.exemple.org par le nom de domaine réel, dont le DNS
+# doit déjà pointer vers la machine. Caddy obtient et renouvelle seul le
+# certificat Let's Encrypt.
+# ---------------------------------------------------------------------------
+hotellerie.exemple.org {
+    encode gzip
+    reverse_proxy 127.0.0.1:8080
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        -Server
+    }
+
+    # Meta n'envoie que des POST JSON sur cette route : on lui laisse de la marge.
+    request_body /webhook/whatsapp {
+        max_size 1MB
+    }
+
+    log {
+        output file /var/log/caddy/hotellerie.log
+    }
+}

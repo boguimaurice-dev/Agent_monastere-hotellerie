@@ -46,7 +46,7 @@ Ces principes ont guidé chaque choix technique. Ils sont opposables : toute
 
 ### 2.2 Vérification continue
 
-Un jeu de **73 vérifications automatiques** (`python3 tests.py`) couvre ce qui
+Un jeu de **79 vérifications automatiques** (`python3 tests.py`) couvre ce qui
 ne doit jamais se dérégler : la compréhension du français des hôtes (dates,
 noms, nombres), la conduite du dialogue de bout en bout, les garde-fous (aucun
 prix inventé, aucune consigne interne divulguée, urgence traitée, silence après
@@ -333,6 +333,7 @@ Neuf tables. Résumé :
 | `messages` | L'historique complet | direction, canal, corps, intention détectée |
 | `blocages` | Indisponibilités déclarées | chambre, période, motif |
 | `notifications` | Le journal des transmissions | canal, destinataire, statut, erreur |
+| `envois` | La file d'attente WhatsApp | numéro, corps, statut, tentatives, erreur |
 | `connaissances` | La base de connaissances | clé, catégorie, question, mots-clés, réponse, priorité |
 | `utilisateurs`, `sessions`, `tentatives` | Comptes et sécurité | — |
 | `parametres` | Configuration éditable | clé / valeur |
@@ -453,6 +454,8 @@ conduite de l'échange, et le rappel final.
 | Entrant | `POST /webhook/whatsapp` — vérification de signature `X-Hub-Signature-256` si `wa_app_secret` est renseigné |
 | Sortant | `POST /{phone_number_id}/messages` — découpage automatique au-delà de 1 500 caractères, numérotation (1/2, 2/2) |
 | Vérification | `GET /webhook/whatsapp?hub.mode=subscribe&hub.verify_token=…&hub.challenge=…` |
+| Diagnostic | Écran « WhatsApp » : `GET /{phone_number_id}` chez Meta, erreurs traduites en français |
+| File d'attente | Table `envois` : tout message est écrit avant l'envoi, rejouable sans perte |
 
 Les messages non textuels (vocal, image) reçoivent une réponse polie invitant
 à écrire, ou à appeler si c'est pressé. Les accusés de réception sont ignorés.
@@ -519,6 +522,7 @@ quotidienne, et **une copie conservée hors du monastère**, sont recommandées.
 - `GET /sante` renvoie un JSON : état, heure, agent actif, WhatsApp configuré
 - `data/logs/hotellerie.log` : toutes les requêtes et les erreurs
 - « Notifications » : ce qui n'est pas parti, et pourquoi
+- Écran « WhatsApp » : diagnostic du compte Meta et file d'attente (`envois`)
 - « Journal » : qui a fait quoi
 
 ### Maintenance
@@ -659,6 +663,8 @@ Le fichier `.env` est lu au démarrage (voir `.env.example`).
 | GET/POST | `/simulateur` | authentifié + CSRF |
 | GET | `/conversations`, `/conversations/<id>` | authentifié |
 | GET | `/notifications`, `/journal`, `/parametres` | authentifié |
+| GET/POST | `/whatsapp` | authentifié (+ CSRF pour les actions) |
+| POST | `/whatsapp/enregistrer`, `/verifier`, `/tester`, `/rejouer` | authentifié + CSRF |
 | GET/POST | `/connexion` | public |
 | GET | `/sante` | public |
 | GET/POST | `/webhook/whatsapp` | public (signature) |

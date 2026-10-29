@@ -165,7 +165,12 @@ def test_disponibilite(db: Base):
     verifier("un blocage rend la chambre indisponible",
              ref not in [c["id"] for c in d["chambres_libres"]], "chambre 1 encore proposée")
 
-    verifier("une demande refusée ne bloque pas la chambre", True)
+    demande_refusee = metier.creer_demande(db, {"nom": "Refusée", "date_arrivee": "2026-12-03",
+                                                   "date_depart": "2026-12-07", "nb_personnes": 1})
+    db.executer("UPDATE demandes SET statut='refusee', chambre_id=? WHERE id=?", (ref2, demande_refusee))
+    libres = metier.verifier_disponibilite(db, "2026-12-04", "2026-12-05", 1)
+    verifier("une demande refusée ne bloque pas la chambre",
+             ref2 in [c["id"] for c in libres["chambres_libres"]])
 
 
 def test_dialogue_complet(db: Base):
@@ -286,11 +291,11 @@ def test_whatsapp():
 
     ok, defi = whatsapp.verifier_webhook({"hub.mode": ["subscribe"],
                                           "hub.verify_token": ["monastere-bouake"],
-                                          "hub.challenge": ["12345"]})
+                                          "hub.challenge": ["12345"]}, jeton="monastere-bouake")
     verifier("poignée de main Meta valide", ok and defi == "12345")
     ok, _ = whatsapp.verifier_webhook({"hub.mode": ["subscribe"],
                                        "hub.verify_token": ["faux"],
-                                       "hub.challenge": ["12345"]})
+                                       "hub.challenge": ["12345"]}, jeton="monastere-bouake")
     verifier("poignée de main Meta rejetée si le jeton diffère", not ok)
 
     long = "Pax.\n\n" + ("Une longue phrase. " * 400)
@@ -298,6 +303,47 @@ def test_whatsapp():
     verifier("messages longs découpés", len(morceaux) > 1 and
              all(len(m) <= whatsapp.LIMITE_CARACTERES + 40 for m in morceaux),
              f"{len(morceaux)} morceaux")
+
+
+
+def test_whatsapp_file(db: Base):
+    print("\nWhatsApp — file d'attente et envoi")
+    from hotellerie.channels import whatsapp as W
+
+    config.definir_parametre(db, "wa_token", "")
+    config.definir_parametre(db, "wa_phone_number_id", "")
+    res = W.envoyer(db, "0151740187", "Pax. Message d'essai.")
+    verifier("sans configuration, le message n'est pas perdu", res.get("ignore") is True)
+    ligne = db.ligne("SELECT * FROM envois ORDER BY id DESC LIMIT 1")
+    verifier("le message est écrit dans la file d'attente",
+             ligne["statut"] == "en_attente" and ligne["numero"] == "2250151740187",
+             str(ligne))
+
+    config.definir_parametre(db, "wa_token", "jeton-de-test")
+    config.definir_parametre(db, "wa_phone_number_id", "123456")
+    appels = []
+    original = W._requete
+
+    def faux_meta(url, token, corps=None, delai=20):
+        appels.append((url, corps))
+        return {"messages": [{"id": "wamid.TEST"}]}
+
+    W._requete = faux_meta
+    try:
+        res = W.envoyer(db, "0151740187", "Pax. Deuxième essai.")
+    finally:
+        W._requete = original
+    ligne = db.ligne("SELECT * FROM envois ORDER BY id DESC LIMIT 1")
+    verifier("avec configuration, l'envoi aboutit",
+             res.get("ok") is True and ligne["statut"] == "envoye", str(res))
+    verifier("l'appel part vers le bon numéro",
+             bool(appels) and appels[0][1]["to"] == "2250151740187", str(appels[:1]))
+    verifier("les messages longs sont découpés", len(W.decouper("Une phrase. " * 400)) > 1)
+    verifier("une erreur Meta est expliquée en français",
+             "Destinataires de test" in W.expliquer_erreur(131030))
+
+    config.definir_parametre(db, "wa_token", "")
+    config.definir_parametre(db, "wa_phone_number_id", "")
 
 
 def test_securite():
@@ -362,6 +408,7 @@ def main() -> int:
         test_garde_fous(db)
         test_connaissances(db)
         test_whatsapp()
+        test_whatsapp_file(db)
         test_securite()
         test_notification(db)
     finally:

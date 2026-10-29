@@ -6,9 +6,9 @@
 > modifiez le fichier source, puis régénérez.
 
 Il contient l'instruction système — la « règle de vie » — qui donne à
-l'agent sa posture, son ton et ses limites. Elle est utilisée telle
-quelle par le module de langage lorsqu'une clé d'API est configurée,
-et sert de référence pour les réponses déterministes.
+l'agent sa posture, son ton et ses limites. Elle sert de référence
+pour les réponses déterministes. Le module de langage expérimental
+n'est pas branché aux réponses de l'agent.
 
 Vous pouvez la reprendre intégralement dans un autre outil
 (Lovable, n8n, un autre modèle de langage) : elle est autonome.

@@ -1,9 +1,15 @@
 # Hôtellerie & Accueil — Monastère Bénédictin Sainte-Marie de Bouaké
 
-Application complète d'accueil et de gestion de l'hôtellerie monastique :
+Application d'accueil et de gestion de l'hôtellerie monastique :
 un **agent d'accueil** qui reçoit les hôtes sur WhatsApp dans l'esprit de la
 Règle de saint Benoît, et un **tableau de bord** où les pères et frères
 responsables gardent la main sur le discernement.
+
+> **État actuel :** prototype mono-établissement, pas encore validé pour la
+> production ni pour un SaaS. Les coordonnées, horaires, règles, fiches et
+> chambres doivent être confirmés par la communauté. Les tests locaux ne
+> prouvent pas le fonctionnement des comptes Meta ou SMTP réels. Voir
+> [ROADMAP_SAAS.md](ROADMAP_SAAS.md) avant toute mise en service.
 
 > « Tous les hôtes qui se présentent seront reçus comme le Christ. »
 > — Règle de saint Benoît, 53
@@ -14,16 +20,17 @@ responsables gardent la main sur le discernement.
 
 | | |
 |---|---|
-| **L'agent d'accueil** | Répond aux hôtes 24 h/24, renseigne sur la maison (offices, accès, cadre de vie), recueille une demande de séjour avec douceur, et transmet une fiche de synthèse aux frères. |
+| **L'agent d'accueil** | Peut répondre automatiquement lorsque le serveur et le canal fonctionnent, renseigne sur la maison (offices, accès, cadre de vie), recueille une demande de séjour avec douceur, et transmet une fiche de synthèse aux frères. |
 | **Le tableau de bord** | Les frères consultent les demandes, discernent (accepter / refuser), attribuent une chambre, voient le calendrier d'occupation, répondent à l'hôte, et enrichissent la base de connaissances de l'agent. |
-| **Le relais** | Chaque demande complète déclenche une fiche envoyée par courriel et sur WhatsApp aux frères hôteliers, en plus de son affichage dans le tableau de bord. |
+| **Le relais** | Chaque demande complète est inscrite dans le tableau de bord ; les notifications externes dépendent de leur configuration et de leur disponibilité. |
 | **Le webhook WhatsApp** | Prêt à être branché sur le numéro **07 97 00 80 52** (Meta Cloud API). |
 
 ### Ce que l'agent ne fait jamais — c'est le point le plus important
 
 Il ne confirme **jamais** une réservation : le discernement final appartient
-aux frères. Il n'invente **jamais** un prix, une disponibilité, un horaire, un
-nom de frère ou une adresse. Ce qu'il ne sait pas, il le transmet.
+aux frères. Il ne doit pas inventer de faits : ses réponses proviennent des fiches, qui
+doivent être vérifiées par les frères. La recherche lexicale peut se tromper ;
+lorsqu'un sujet n'est pas documenté, elle invite à contacter la maison.
 
 ---
 
@@ -37,7 +44,7 @@ nom de frère ou une adresse. Ce qu'il ne sait pas, il le transmet.
 L'application n'utilise que la **bibliothèque standard** : pas de `pip install`,
 pas de dépendance à mettre à jour, pas de serveur de base de données à
 administrer. Les données tiennent dans un seul fichier
-(`data/hotellerie.db`) que l'on sauvegarde par simple copie.
+(`data/hotellerie.db`) à sauvegarder avec `python3 run.py sauvegarde` (copie SQLite cohérente, même en mode WAL).
 
 ### Démarrage en trois commandes
 
@@ -52,6 +59,13 @@ python3 run.py servir                 # http://localhost:8080
 `--demo` ajoute six demandes fictives, pour que le tableau de bord parle tout
 de suite. **À ne pas faire en production.**
 
+Pour visualiser l’interface sans installer de compte ni toucher aux données
+réelles, lancez `python3 deploiement/apercu_demo.py`, puis ouvrez le port 8080.
+Cet aperçu est public et sans authentification : sa base temporaire contient
+des données fictives et est détruite à l’arrêt ; les envois externes sont
+désactivés. N’y saisissez aucune donnée personnelle et ne l’utilisez jamais
+comme serveur de production.
+
 ### Première chose à faire après l'installation
 
 1. **Renommer les chambres** dans « Occupation ». Neuf chambres génériques
@@ -61,8 +75,9 @@ de suite. **À ne pas faire en production.**
    (menu « À compléter »). Dix-sept fiches contiennent encore une mention
    `[[À COMPLÉTER …]]` : offrande conseillée, horaires du portail, capacité
    d'accueil des groupes, enfants et animaux, etc.
-   **Tant qu'une fiche reste en blanc, l'agent ne répondra pas à côté : il dira
-   honnêtement qu'il transmet la question aux frères.** C'est volontaire.
+   Lorsqu’une fiche est incomplète, l’agent indique que certains détails restent
+   à confirmer. Vérifiez aussi les autres fiches : leur contenu n’est pas
+   automatiquement validé et une recherche lexicale peut choisir la mauvaise fiche.
 
 ---
 
@@ -74,6 +89,10 @@ python3 run.py servir --port 8080     # démarrer le serveur
 python3 run.py initialiser [--demo]   # (ré)initialiser la base
 python3 run.py utilisateur --login X  # créer ou modifier un compte
 python3 run.py tester                 # dialoguer avec l'agent dans le terminal
+python3 run.py whatsapp               # état du branchement WhatsApp
+python3 run.py whatsapp --verifier    # interroger Meta sur le compte
+python3 run.py whatsapp --envoyer "Pax. Essai" --numero 0151740187
+python3 run.py whatsapp --rejouer     # rejouer la file d'attente
 python3 run.py importer [--ecraser]   # réimporter base_connaissances.json
 python3 run.py sauvegarde [dossier]   # copier la base avec la date du jour
 python3 run.py secret                 # générer un secret aléatoire
@@ -86,9 +105,10 @@ de le brancher sur WhatsApp. Aucun message n'est envoyé pour de vrai.
 
 ```bash
 python3 tests.py
+python3 -m unittest discover -s tests -v
 ```
 
-73 vérifications couvrent ce qui ne doit jamais se dérégler : la compréhension
+79 vérifications couvrent ce qui ne doit jamais se dérégler : la compréhension
 des dates et des noms en français courant, la conduite du dialogue, les
 garde-fous (aucun prix inventé, aucune consigne interne divulguée, urgence
 traitée), le calcul des disponibilités, la sécurité et le webhook.
@@ -114,67 +134,95 @@ touchées**. À relancer après chaque modification de la base de connaissances.
 > demandera de le migrer vers l'API Cloud. Les messages déjà présents sur le
 > téléphone ne sont pas transférés. Prévoyez cette bascule avec les frères.
 
-### 4.2 Renseigner les paramètres
+### 4.2 Renseigner les paramètres — l'écran « WhatsApp »
 
-Ouvrir `Paramètres` dans le tableau de bord et remplir :
+Le tableau de bord a un écran dédié, **WhatsApp**, dans le menu. Il sert à
+enregistrer les réglages, à **vérifier le compte chez Meta** et à **envoyer un
+message d'essai**. C'est là que tout se joue, sans ligne de commande.
 
 | Paramètre | Valeur |
 |---|---|
 | `wa_token` | le jeton d'accès permanent |
 | `wa_phone_number_id` | l'identifiant du numéro |
-| `wa_verify_token` | un mot de passe de votre choix (ex. `pax-bouake-2026`) |
+| `wa_verify_token` | un jeton secret choisi par vous pour le webhook (aucun jeton par défaut) |
 | `wa_app_secret` | le secret de l'application (vérification de signature) |
-| `hoteliers_whatsapp` | les numéros des frères, séparés par des virgules |
+| `wa_api_version` | version de l'API (défaut `v21.0`) |
+| `wa_numero_test` | le numéro qui reçoit les essais (défaut `2250151740187`) |
+| `site_url` | l'adresse publique HTTPS du tableau de bord |
 
 Les valeurs sont conservées dans la base, sauf si une variable
 d'environnement du même nom existe (celle-ci garde la priorité). Un fichier
 `.env` est également lu au démarrage — voir `.env.example`.
+
+Le bouton **Vérifier le compte** interroge `graph.facebook.com` et affiche, en
+français, ce qui manque : jeton expiré (190), numéro non autorisé en mode test
+(131030), fenêtre de 24 h fermée (131047)… Le bouton **Envoyer l'essai** écrit
+au numéro d'essai.
 
 ### 4.3 Déclarer le webhook
 
 Dans la configuration WhatsApp de Meta :
 
 - **URL de rappel** : `https://votre-serveur/webhook/whatsapp`
-- **Jeton de vérification** : celui choisi ci-dessus
+- **Jeton de vérification** : celui choisi ci-dessus (`monastere-bouake` par défaut)
 - **Champs abonnés** : cocher **messages**
 
-L'URL doit être en **HTTPS** : Meta l'exige. Voir la section 6 pour les
-options d'hébergement.
+L'adresse exacte est affichée dans l'écran « WhatsApp » dès que `site_url` est
+renseignée. Meta exige **HTTPS** : voir la section 6 pour l'hébergement.
 
-### 4.4 Vérifier
+**Pour essayer tout de suite, sans nom de domaine**, un tunnel suffit :
 
-Depuis un téléphone, écrivez au numéro. Le message doit apparaître dans
-« Échanges » puis dans « Demandes ». Consultez « Notifications » pour voir
-l'accusé d'envoi ; en cas d'échec, le motif y est consigné.
+```bash
+./deploiement/tunnel.sh        # affiche une adresse https://….trycloudflare.com
+```
 
-**Tant que le jeton n'est pas configuré, rien n'est envoyé** : l'application
-fonctionne normalement, les réponses sont simplement consignées dans la base
-au lieu de partir. Cela permet de tester tout le reste hors ligne.
+Déclarer `<adresse-affichée>/webhook/whatsapp` dans Meta. Le tunnel ne dure
+que le temps du terminal : c'est fait pour l'essai, pas pour la production.
+
+### 4.4 Vérifier — le parcours d'essai (numéro 0151740187)
+
+1. Dans l'application Meta, ajouter **0151740187** aux « Destinataires de test ».
+2. Depuis ce téléphone, écrire « Bonjour » au numéro WhatsApp Business.
+3. L'agent répond dans la conversation ; l'échange apparaît dans « Échanges ».
+4. En cas d'échec, le motif est lisible dans « WhatsApp » (derniers messages) et
+   dans « Notifications ».
+
+Meta n'autorise un message libre que dans les **24 heures** qui suivent un
+message de l'hôte. D'où l'étape 2 : le code d'erreur 131047 signifie exactement
+« la fenêtre est fermée ». Pour écrire le premier, il faudrait un modèle
+(template) validé par Meta.
+
+### 4.5 La file d'attente
+
+Chaque message WhatsApp est **écrit en base avant l'envoi** (table `envois`).
+Sans jeton, sans réseau, ou après un refus de Meta, il reste `en_attente` et
+repart avec le bouton « Rejouer la file » ou :
+
+```bash
+python3 run.py whatsapp --rejouer
+```
+
+La reprise est manuelle ; surveillez la file et les erreurs. En cas de coupure
+au milieu d’un appel réseau, la livraison effective peut être incertaine :
+contrôlez les doublons et la réponse de Meta avant de rejouer. Une coupure
+pendant le traitement d’un webhook peut également nécessiter une intervention.
 
 ---
 
-## 5. Le module de langage (facultatif)
+## 5. Réponses de l’agent et API
 
-Par défaut, l'agent n'utilise **aucune intelligence artificielle** : il puise
-ses réponses dans la base de connaissances rédigée par les frères. C'est
-gratuit, prévisible, et cela fonctionne même quand Internet est coupé — ce qui
-compte à Bouaké.
+L’agent est **déterministe**, sans modèle de langage. Le code expérimental du
+module de langage est conservé mais n’est pas branché aux réponses : une simple
+consigne ne suffit pas à garantir qu’une IA n’ajoute pas de faits. Avant toute
+réactivation, il faut une validation adaptée, des tests et une politique de
+confidentialité. Les échanges du simulateur sont conservés localement, mais
+ne créent ni demande réelle ni notification externe.
 
-Si vous le souhaitez, une clé d'API (OpenAI, Anthropic, ou tout service
-compatible) ajoute une formulation plus souple. Dans `Paramètres` :
-
-| Paramètre | Exemple |
-|---|---|
-| `ia_active` | `1` |
-| `ia_fournisseur` | `openai` ou `anthropic` |
-| `ia_modele` | `gpt-4o-mini` |
-| `ia_cle_api` | la clé |
-
-**Ce module n'a jamais le dernier mot.** La collecte des informations, la
-vérification des disponibilités et l'enregistrement des demandes restent
-déterministes : le modèle de langage ne fait que formuler. S'il est absent,
-coupé, ou en erreur, l'agent retombe immédiatement sur ses propres réponses.
-Un hôte ne reste jamais sans réponse à cause d'un service tiers.
+L’API `/api/agent` est fermée par défaut. Pour un usage contrôlé, configurez
+`api_cle`, puis envoyez des requêtes JSON avec l’en-tête `X-API-Key`. Passez
+la valeur `conversation` renvoyée par l’API dans les requêtes suivantes pour
+conserver le dialogue. Ne mettez pas la clé dans une URL. L’option d’ouverture
+sans clé n’est pas adaptée à une exposition publique.
 
 ---
 
@@ -196,15 +244,18 @@ sudo cp deploiement/hotellerie.service /etc/systemd/system/
 sudo systemctl enable --now hotellerie
 ```
 
-Pour l'exposer en HTTPS, placer un reverse proxy (Caddy, le plus simple) :
+Pour l'exposer en HTTPS, placer un reverse proxy (Caddy, le plus simple).
+Un `Caddyfile` prêt à copier est fourni :
 
-```
-hotellerie.monastere.ci {
-    reverse_proxy 127.0.0.1:8080
-}
+```bash
+sudo cp deploiement/Caddyfile /etc/caddy/Caddyfile
+sudo systemctl reload caddy
 ```
 
-Caddy obtient et renouvelle le certificat automatiquement.
+Il suffit d'y remplacer `hotellerie.exemple.org` par le nom de domaine réel.
+Caddy obtient et renouvelle le certificat automatiquement. Sans cette adresse
+HTTPS, Meta refusera le webhook : c'est la seule pièce que la maison doit
+fournir (un nom de domaine, ou un VPS avec Caddy).
 
 ### 6.2 Chez un hébergeur (VPS)
 
@@ -229,7 +280,7 @@ de données a besoin.
 La base entière tient dans un fichier. Une sauvegarde quotidienne suffit :
 
 ```bash
-python3 run.py sauvegarde /chemin/vers/les/sauvegardes
+python3 run.py sauvegarde /chemin/vers/une-sauvegarde.db
 ```
 
 Ajouter cette ligne dans `crontab` pour l'automatiser chaque nuit à 2 h :
@@ -253,12 +304,16 @@ serveur et sa sauvegarde s'ils sont dans la même pièce.
 - Les tentatives de connexion sont limitées (6 essais, puis 15 min d'attente).
 - Les jetons et secrets sont masqués dans l'interface ; une variable
   d'environnement peut les remplacer pour ne jamais les écrire dans la base.
-- Le webhook vérifie la signature `X-Hub-Signature-256` si `wa_app_secret`
-  est renseigné.
-- Les données des hôtes restent dans la base du monastère. Rien n'est envoyé
-  à un tiers, **sauf** si le module de langage est activé : dans ce cas, le
-  contenu des messages est transmis au fournisseur choisi pour produire la
-  réponse. C'est le seul flux sortant, et il est désactivé par défaut.
+- Le webhook refuse les messages entrants si `wa_app_secret` n’est pas
+  renseigné ou si la signature `X-Hub-Signature-256` est invalide.
+- Les notifications configurées peuvent transmettre des données d’hôtes à
+  Meta et au fournisseur SMTP. Protégez l’accès, minimisez les données et
+  définissez leur durée de conservation avant d’accueillir de vrais hôtes.
+- Les rôles affichés ne constituent pas encore une séparation d’autorisations
+  complète. N’ouvrez pas l’application à plusieurs organisations.
+- Le serveur intégré et SQLite ciblent un seul établissement ; audits de
+  sécurité, contrôle des accès, sauvegardes restaurables et supervision sont
+  nécessaires avant l’ouverture sur Internet.
 
 ---
 
@@ -267,6 +322,7 @@ serveur et sa sauvegarde s'ils sont dans la même pièce.
 ```
 monastere-hotellerie/
 ├── run.py                    point d'entrée (ligne de commande)
+├── tests.py                  79 vérifications automatiques
 ├── base_connaissances.json   le « cerveau » de l'agent, éditable
 ├── README.md                 ce fichier
 ├── SPECIFICATION.md          cahier des charges complet
@@ -274,7 +330,9 @@ monastere-hotellerie/
 ├── .env.example              modèle de configuration
 ├── Dockerfile                déploiement en conteneur
 ├── deploiement/
-│   └── hotellerie.service    unité systemd
+│   ├── hotellerie.service    unité systemd
+│   ├── Caddyfile             HTTPS automatique (webhook Meta)
+│   └── tunnel.sh             tunnel HTTPS d'essai (cloudflared)
 ├── data/                     la base SQLite et les journaux (à sauvegarder)
 └── hotellerie/
     ├── config.py             paramètres (env > base > défaut)
@@ -304,7 +362,7 @@ monastere-hotellerie/
 
 | Symptôme | Cause probable | Remède |
 |---|---|---|
-| L'agent ne répond pas sur WhatsApp | `wa_token` ou `wa_phone_number_id` vide | « Paramètres », puis « Notifications » pour lire le motif d'échec |
+| L'agent ne répond pas sur WhatsApp | `wa_token` ou `wa_phone_number_id` vide | Écran « WhatsApp » : « Vérifier le compte », puis « Rejouer la file » |
 | Le webhook renvoie 403 | Jeton de vérification différent | Le même mot de passe des deux côtés |
 | Page blanche après une action | Session expirée | Se reconnecter |
 | « La base est occupée » | Deux instances lancées | Arrêter le doublon |
