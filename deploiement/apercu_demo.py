@@ -72,6 +72,10 @@ with tempfile.TemporaryDirectory(prefix="hotellerie-apercu-") as dossier:
     securite.creer_utilisateur(db, "Frère Hôtelier (démo)", "demo", "MaisonDemo2026")
     ApercuHandler.db = db
     ApercuHandler.agent = Agent(db)
+    # Un échange fictif permet de découvrir le relais sans compte Meta.
+    ApercuHandler.agent.repondre("demo-whatsapp", "Bonjour, je souhaite parler à un frère.",
+                                canal="whatsapp", telephone="2250700000000",
+                                nom_contact="Hôte de démonstration")
     ApercuHandler.session_demo = securite.creer_session(db, "demo", heures=24 * 365)
     serveur = ThreadingHTTPServer(("0.0.0.0", port), ApercuHandler)
     print("Aperçu fictif : accès direct, aucune donnée réelle ni envoi externe", flush=True)

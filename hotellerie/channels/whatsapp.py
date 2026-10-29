@@ -11,8 +11,11 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 import urllib.error
 import urllib.request
+import urllib.parse
+import ipaddress
 
 from .. import config
 
@@ -21,6 +24,7 @@ log = logging.getLogger(__name__)
 API = "https://graph.facebook.com/v21.0"
 LIMITE_CARACTERES = 1500
 PAYS = "225"
+_VERROU_ENVOIS = threading.RLock()
 
 
 # ---------------------------------------------------------------------------
@@ -254,7 +258,12 @@ def derniers_envois(db, limite: int = 12) -> list:
 
 
 def rejouer(db, limite: int = 20) -> dict:
-    """Tente de renvoyer ce qui attend. Ne lève jamais."""
+    """Tente de renvoyer ce qui attend, sans concurrence dans ce processus."""
+    with _VERROU_ENVOIS:
+        return _rejouer(db, limite)
+
+
+def _rejouer(db, limite: int = 20) -> dict:
     conf = configuration(db)
     if not conf["token"] or not conf["phone_number_id"]:
         return {"ok": False, "envoyes": 0, "restants": len(file_attente(db, limite)),
@@ -286,16 +295,23 @@ def _expedier(db, conf, destinataire, texte, delai: int = 20) -> dict:
         return {"ok": False, "ignore": False, "morceaux": 0, "erreur": "numéro vide"}
     url = f"{_base(db)}/{conf['phone_number_id']}/messages"
     morceaux = decouper(texte)
+    if not morceaux:
+        return {"ok": False, "ignore": False, "morceaux": 0, "erreur": "message vide"}
     envoyes = 0
     try:
         for morceau in morceaux:
-            _requete(url, conf["token"], {
+            accuse = _requete(url, conf["token"], {
                 "messaging_product": "whatsapp",
                 "recipient_type": "individual",
                 "to": destinataire,
                 "type": "text",
                 "text": {"preview_url": False, "body": morceau},
             }, delai)
+            messages = accuse.get("messages") if isinstance(accuse, dict) else None
+            if not isinstance(messages, list) or not messages or not isinstance(messages[0], dict) or not messages[0].get("id"):
+                return {"ok": False, "ignore": False, "morceaux": envoyes,
+                        "restants": morceaux[envoyes:],
+                        "erreur": "Réponse Meta sans identifiant : livraison incertaine, vérifiez avant de rejouer."}
             envoyes += 1
         return {"ok": True, "ignore": False, "morceaux": envoyes, "erreur": ""}
     except urllib.error.HTTPError as exc:
@@ -318,11 +334,22 @@ def envoyer(db, numero: str, texte: str, apercu: bool = False,
     le message reste ``en_attente`` et ``run.py whatsapp --rejouer`` le
     reprendra. C'est le principe T2 du cahier des charges.
     """
+    with _VERROU_ENVOIS:
+        return _envoyer(db, numero, texte, apercu, demande_id, conversation_id)
+
+
+def _envoyer(db, numero, texte, apercu, demande_id, conversation_id):
     if apercu:
         return {"ok": True, "ignore": True, "morceaux": 0, "envoi_id": 0,
                 "erreur": "mode aperçu : rien n'a été envoyé ni mis en file"}
-    conf = configuration(db)
     destinataire = normaliser_numero(numero)
+    if not 8 <= len(destinataire) <= 15 or not destinataire.isdigit():
+        return {"ok": False, "ignore": False, "morceaux": 0, "envoi_id": 0,
+                "erreur": "numéro de destinataire invalide"}
+    if not (texte or "").strip():
+        return {"ok": False, "ignore": False, "morceaux": 0, "envoi_id": 0,
+                "erreur": "message vide"}
+    conf = configuration(db)
     identifiant = _consigner(db, destinataire, texte, demande_id, conversation_id)
     if not identifiant:
         return {"ok": False, "ignore": False, "morceaux": 0, "envoi_id": 0,
@@ -332,11 +359,6 @@ def envoyer(db, numero: str, texte: str, apercu: bool = False,
         return {"ok": False, "ignore": True, "morceaux": 0, "envoi_id": identifiant,
                 "erreur": "WhatsApp non configuré (jeton ou identifiant du numéro absent) : "
                           "le message reste dans la file d'attente."}
-    if not destinataire:
-        _clore(db, identifiant, "echoue", "numéro vide")
-        return {"ok": False, "ignore": False, "morceaux": 0, "envoi_id": identifiant,
-                "erreur": "numéro vide"}
-
     resultat = _expedier(db, conf, destinataire, texte)
     resultat["envoi_id"] = identifiant
     if resultat["ok"]:
@@ -376,6 +398,20 @@ def verifier_compte(db) -> dict:
                            "vérifiez la connexion Internet de la maison."}
 
 
+def url_https_publique(url: str) -> bool:
+    try:
+        adresse = urllib.parse.urlsplit(url or "")
+        hote = (adresse.hostname or "").lower().rstrip(".")
+        if adresse.scheme != "https" or not hote or hote == "localhost" or hote.endswith(".localhost"):
+            return False
+        try:
+            return ipaddress.ip_address(hote).is_global
+        except ValueError:
+            return "." in hote
+    except ValueError:
+        return False
+
+
 def diagnostic(db, numero: str = "") -> dict:
     """Ce qu'il faut savoir avant d'annoncer « WhatsApp est branché »."""
     conf = configuration(db)
@@ -390,13 +426,13 @@ def diagnostic(db, numero: str = "") -> dict:
     etape("Identifiant du numéro (phone_number_id)", bool(conf["phone_number_id"]),
           conf["phone_number_id"] or "absent")
     etape("Jeton de vérification du webhook", bool(conf["verify_token"]),
-          conf["verify_token"] or "absent")
+          "présent" if conf["verify_token"] else "absent")
     etape("Secret de l'application (signature)", bool(conf["app_secret"]),
           "présent" if conf["app_secret"] else
           "obligatoire : le webhook refuse les messages sans signature vérifiable")
-    etape("Adresse publique du webhook", bool(conf["site_url"]),
-          (conf["site_url"] + "/webhook/whatsapp") if conf["site_url"]
-          else "non renseignée — Meta exige une adresse HTTPS publique")
+    etape("Adresse publique du webhook", url_https_publique(conf["site_url"]),
+          (conf["site_url"] + "/webhook/whatsapp") if url_https_publique(conf["site_url"])
+          else "adresse HTTPS publique requise — son accessibilité reste à vérifier")
     etape("Numéro d'essai", bool(numero),
           afficher_numero(numero) if numero else "non renseigné")
 

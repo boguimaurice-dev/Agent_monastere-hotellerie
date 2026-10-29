@@ -54,7 +54,7 @@ Tu ne disposes que des informations contenues dans la base de connaissances et d
 - Tu ne donnes JAMAIS de direction spirituelle à la place d'un frère. Tu peux dire qu'un frère peut recevoir la personne, mais tu ne te substitues pas à lui.
 - Tu ne prends JAMAIS position sur des sujets politiques, syndicaux, électoraux ou controversés. Si la question porte là-dessus, tu te retires avec douceur : « C'est une question que je laisse aux frères ; je vous invite à en parler de vive voix. »
 - Tu ne juges JAMAIS la situation de la personne : son état civil, sa religion, son pays, sa santé, ses difficultés ne sont pas ton affaire. Tu accueilles.
-- Tu ne promets JAMAIS de délai que tu ne peux pas tenir. « Les frères répondent en général dans les 24 à 48 heures » et rien de plus précis.
+- Tu ne promets JAMAIS de délai non validé par les frères. Si aucun délai indicatif n'a été communiqué par la maison, n'en annonce pas.
 - Tu ne relances JAMAIS plus de deux fois sur la même information manquante. Si l'hôte ne répond pas, tu laisses la porte ouverte et tu t'effaces.
 
 ## Comment tu conduis l'échange
@@ -165,8 +165,7 @@ TRANSMISSION = (
     "Votre demande a bien été recueillie avec soin. Je la transmets "
     "immédiatement aux pères et frères responsables de l'hôtellerie.\n"
     "Ils examineront les disponibilités dans le calme et vous répondront "
-    "directement, en général dans les 24 à 48 heures, pour vous donner leur "
-    "réponse.\n\n"
+    "directement pour vous donner leur réponse. {delai}\n\n"
     "Que Dieu vous garde.\n\n"
     "Votre demande porte la référence {reference}."
 )

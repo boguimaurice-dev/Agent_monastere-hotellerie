@@ -523,7 +523,13 @@ def extraire_annulation(texte: str) -> bool:
 
 
 def extraire_telephone(texte: str) -> str:
-    m = re.search(r"(?:\+?225[\s.-]?)?(\d[\d\s.-]{7,14}\d)", texte or "")
+    # Une date ISO ou une date numérique espacée ne doit jamais remplacer
+    # le numéro réel du contact (ex. 2030-12-01 ≠ un numéro ivoirien).
+    texte = texte or ""
+    texte = re.sub(r"\b\d{4}-\d{1,2}-\d{1,2}\b", " ", texte)
+    texte = re.sub(r"\b\d{1,2}[/-]\d{1,2}[/-]\d{4}\b", " ", texte)
+    texte = re.sub(r"\b\d{1,2}\s+\d{1,2}\s+(?:19|20)\d{2}\b", " ", texte)
+    m = re.search(r"(?:\+?225[\s.-]?)?(\d[\d\s.-]{7,14}\d)", texte)
     if not m:
         return ""
     chiffres = re.sub(r"\D", "", m.group(0))

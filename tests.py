@@ -201,7 +201,7 @@ def test_dialogue_complet(db: Base):
     verifier("transmission confirmée à l'hôte", "transmets" in r8.lower(), r8[:80])
     verifier("l'agent ne promet pas de réservation",
              "réservé" not in r8.lower() and "confirmée" not in r8.lower(), r8[:120])
-    verifier("délai honnête annoncé", "24" in r8 or "48" in r8, r8[:120])
+    verifier("aucun délai non validé n'est promis", "24" not in r8 and "48" not in r8, r8[:120])
 
     dem = db.ligne("SELECT * FROM demandes ORDER BY id DESC LIMIT 1")
     verifier("la demande est enregistrée en attente", dem["statut"] == "en_attente", dem["statut"])

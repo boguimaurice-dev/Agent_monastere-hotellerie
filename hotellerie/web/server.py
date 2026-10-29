@@ -32,6 +32,11 @@ from .templates import esc
 log = logging.getLogger(__name__)
 
 COOKIE = "hotellerie_session"
+LIMITE_CORPS = 1024 * 1024
+
+
+class RequeteTropLongue(Exception):
+    pass
 
 
 def _maintenant() -> str:
@@ -93,6 +98,9 @@ class Handler(BaseHTTPRequestHandler):
             self._router()
         except BrokenPipeError:
             pass
+        except RequeteTropLongue:
+            self.close_connection = True
+            self._repondre(413, b"Requete trop volumineuse", "text/plain; charset=utf-8")
         except Exception:
             log.exception("Erreur pendant le traitement de %s", self.path)
             try:
@@ -107,6 +115,8 @@ class Handler(BaseHTTPRequestHandler):
             longueur = 0
         if longueur <= 0:
             return b""
+        if longueur > LIMITE_CORPS:
+            raise RequeteTropLongue()
         return self.rfile.read(longueur)
 
     # ------------------------------------------------------------------
@@ -377,15 +387,19 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if action == "statut":
                 statut = self._post.get("statut", "")
-                if statut in metier.STATUTS:
+                try:
                     metier.changer_statut(db, identifiant, statut, acteur)
                     self._flash(f"/demandes/{identifiant}", message="Décision enregistrée.")
-                else:
-                    self._flash(f"/demandes/{identifiant}", erreur="Statut inconnu.")
+                except ValueError as exc:
+                    self._flash(f"/demandes/{identifiant}", erreur=str(exc))
                 return
             if action == "chambre":
-                metier.attribuer_chambre(db, identifiant, self._post.get("chambre_id") or 0, acteur)
-                self._flash(f"/demandes/{identifiant}", message="Chambre attribuée.")
+                try:
+                    chambre_id = self._post.get("chambre_id") or 0
+                    metier.attribuer_chambre(db, identifiant, chambre_id, acteur)
+                    self._flash(f"/demandes/{identifiant}", message=("Chambre attribuée." if str(chambre_id) != "0" else "Attribution retirée."))
+                except ValueError as exc:
+                    self._flash(f"/demandes/{identifiant}", erreur=str(exc))
                 return
             if action == "notes":
                 metier.mettre_a_jour(db, identifiant, {"notes_internes": self._post.get("notes_internes", "")})
@@ -414,10 +428,13 @@ class Handler(BaseHTTPRequestHandler):
 
         if chemin == "/blocages":
             if self._post.get("chambre_id") and self._post.get("date_debut") and self._post.get("date_fin"):
-                metier.creer_blocage(db, self._post["chambre_id"], self._post["date_debut"],
-                                     self._post["date_fin"], self._post.get("motif", ""))
-                db.journal(acteur, "blocage_cree", self._post.get("chambre_id", ""))
-                self._flash("/calendrier", message="Indisponibilité enregistrée.")
+                try:
+                    metier.creer_blocage(db, self._post["chambre_id"], self._post["date_debut"],
+                                         self._post["date_fin"], self._post.get("motif", ""))
+                    db.journal(acteur, "blocage_cree", self._post.get("chambre_id", ""))
+                    self._flash("/calendrier", message="Indisponibilité enregistrée.")
+                except ValueError as exc:
+                    self._flash("/calendrier", erreur=str(exc))
             else:
                 self._flash("/calendrier", erreur="Chambre et dates nécessaires.")
             return
@@ -470,31 +487,17 @@ class Handler(BaseHTTPRequestHandler):
             self._rediriger("/simulateur?cid=" + urllib.parse.quote(cid))
             return
 
-        correspondance = re.match(r"^/conversations/(.+)/relais$", chemin)
+        correspondance = re.match(r"^/conversations/(.+)/(relais|repondre)$", chemin)
         if correspondance:
             conversation = urllib.parse.unquote(correspondance.group(1))
-            prendre = self._post.get("action") != "rendre"
-            conv = db.ligne("SELECT donnees, etat FROM conversations WHERE id = ?", (conversation,))
-            if not conv:
-                self._erreur(404, "Conversation introuvable.")
+            if correspondance.group(2) == "repondre":
+                self._repondre_conversation(acteur, conversation)
                 return
-            try:
-                donnees = json.loads(conv["donnees"] or "{}")
-                if not isinstance(donnees, dict):
-                    donnees = {}
-            except (ValueError, TypeError):
-                donnees = {}
-            donnees["humain_requis"] = int(prendre)
-            if not prendre and donnees.get("etape") == "relais":
-                donnees["etape"] = "accueil"
-                donnees["relances"] = 0
-            db.executer("UPDATE conversations SET humain_requis = ?, donnees = ?, etat = ? WHERE id = ?",
-                        (int(prendre), json.dumps(donnees, ensure_ascii=False),
-                         donnees.get("etape", conv["etat"]), conversation))
-            db.journal(acteur, "relais_humain" if prendre else "relais_rendu", conversation)
-            self._flash(f"/conversations/{urllib.parse.quote(conversation)}",
-                        message="Vous avez la main. L'agent se tait." if prendre
-                        else "La parole est rendue à l'agent.")
+            prendre = self._post.get("action") != "rendre"
+            # Même verrou que le moteur pour éviter une réponse simultanée
+            # pendant la bascule de relais.
+            with self.agent._verrou:
+                self._basculer_relais(db, acteur, conversation, prendre)
             return
 
         if chemin == "/parametres":
@@ -505,6 +508,8 @@ class Handler(BaseHTTPRequestHandler):
                 if cle in vues.PARAMETRES_SECRETS and valeur == vues.MASQUE:
                     continue
                 config.definir_parametre(db, cle, valeur)
+            if any(cle.startswith("wa_") for cle in self._post):
+                config.definir_parametre(db, "wa_dernier_diagnostic", "")
             db.journal(acteur, "parametres_modifies", "")
             self._flash("/parametres", message="Paramètres enregistrés.")
             return
@@ -520,6 +525,7 @@ class Handler(BaseHTTPRequestHandler):
                     if cle in vues.WHATSAPP_SECRETS and valeur == vues.MASQUE:
                         continue
                     config.definir_parametre(db, cle, valeur.strip())
+                config.definir_parametre(db, "wa_dernier_diagnostic", "")
                 db.journal(acteur, "whatsapp_parametres", "")
                 self._flash("/whatsapp", message="Réglages WhatsApp enregistrés.")
                 return
@@ -527,12 +533,13 @@ class Handler(BaseHTTPRequestHandler):
             if action == "verifier":
                 releve = whatsapp.diagnostic(db)
                 releve["horodatage"] = _maintenant()
+                releve["type"] = "configuration"
                 config.definir_parametre(db, "wa_dernier_diagnostic",
                                          json.dumps(releve, ensure_ascii=False))
                 db.journal(acteur, "whatsapp_diagnostic", "",
                            "pret" if releve.get("pret") else "incomplet")
                 if releve.get("pret"):
-                    self._flash("/whatsapp", message="Compte joint chez Meta : WhatsApp est prêt.")
+                    self._flash("/whatsapp", message="Contrôles préalables satisfaits. Testez maintenant le webhook et un échange réel.")
                 else:
                     self._flash("/whatsapp",
                                 erreur="Le diagnostic n'est pas encore complet : lisez le relevé ci-dessous.")
@@ -547,6 +554,7 @@ class Handler(BaseHTTPRequestHandler):
                 resultat = whatsapp.envoyer(db, numero, texte)
                 config.definir_parametre(db, "wa_dernier_diagnostic", json.dumps({
                     "horodatage": _maintenant(),
+                    "type": "essai",
                     "etapes": [{
                         "etape": "Message d'essai vers " + (whatsapp.afficher_numero(numero) or "—"),
                         "ok": bool(resultat.get("ok")),
@@ -577,6 +585,67 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
         self._erreur(404, "Action inconnue.")
+
+    def _basculer_relais(self, db, acteur, conversation, prendre):
+        conv = db.ligne("SELECT donnees, etat FROM conversations WHERE id = ?", (conversation,))
+        if not conv:
+            self._erreur(404, "Conversation introuvable.")
+            return
+        try:
+            donnees = json.loads(conv["donnees"] or "{}")
+            if not isinstance(donnees, dict):
+                donnees = {}
+        except (ValueError, TypeError):
+            donnees = {}
+        donnees["humain_requis"] = int(prendre)
+        if not prendre and donnees.get("etape") == "relais":
+            donnees["etape"] = "accueil"
+            donnees["relances"] = 0
+        db.executer("UPDATE conversations SET humain_requis = ?, donnees = ?, etat = ? WHERE id = ?",
+                    (int(prendre), json.dumps(donnees, ensure_ascii=False),
+                     donnees.get("etape", conv["etat"]), conversation))
+        db.journal(acteur, "relais_humain" if prendre else "relais_rendu", conversation)
+        self._flash("/conversations/" + urllib.parse.quote(conversation, safe=""),
+                    message="Vous avez la main. L'agent se tait." if prendre
+                    else "La parole est rendue à l'agent.")
+
+    def _repondre_conversation(self, acteur, conversation):
+        db = self.db
+        chemin = "/conversations/" + urllib.parse.quote(conversation, safe="")
+        texte = (self._post.get("message") or "").strip()
+        if not texte or len(texte) > 4000:
+            self._flash(chemin, erreur="Le message doit contenir entre 1 et 4 000 caractères.")
+            return
+        with self.agent._verrou:
+            conv = db.ligne("SELECT * FROM conversations WHERE id = ?", (conversation,))
+            if not conv:
+                self._erreur(404, "Conversation introuvable.")
+                return
+            if conv["canal"] != "whatsapp" or not conv.get("telephone"):
+                self._flash(chemin, erreur="La réponse directe est réservée aux échanges WhatsApp avec numéro connu.")
+                return
+            if not conv["humain_requis"]:
+                self._flash(chemin, erreur="Prenez d'abord le relais pour éviter deux réponses simultanées.")
+                return
+            resultat = whatsapp.envoyer(db, conv["telephone"], texte,
+                                        demande_id=conv.get("demande_id"), conversation_id=conversation)
+            envoi_id = resultat.get("envoi_id") or 0
+            if envoi_id:
+                db.executer("INSERT INTO messages (conversation_id, direction, canal, corps, meta) "
+                            "VALUES (?, 'sortant', 'whatsapp', ?, ?)",
+                            (conversation, texte, json.dumps({"auteur": acteur, "envoi_id": envoi_id})))
+                db.executer("UPDATE conversations SET maj = datetime('now','localtime') WHERE id = ?",
+                            (conversation,))
+            db.journal(acteur, "reponse_conversation", conversation,
+                       "accepte_meta" if resultat.get("ok") else "non_envoye")
+        if resultat.get("ok"):
+            self._flash(chemin, message="Message accepté par WhatsApp. Vérifiez sa réception auprès de l'hôte.")
+        elif envoi_id:
+            self._flash(chemin, erreur="Message non envoyé. Il reste dans la file WhatsApp : "
+                        + (resultat.get("erreur") or "envoi impossible"))
+        else:
+            self._flash(chemin, erreur="Message non enregistré ni envoyé : "
+                        + (resultat.get("erreur") or "envoi impossible"))
 
     def _repondre_hote(self, acteur: str, dem) -> None:
         db = self.db
@@ -609,10 +678,16 @@ class Handler(BaseHTTPRequestHandler):
             "VALUES (?, ?, ?, ?, ?, ?)",
             (dem["id"], canal, destinataire, "Réponse de la maison", statut,
              resultat.get("erreur", "")))
-        if dem.get("conversation_id"):
+        envoi_id = resultat.get("envoi_id") or 0
+        if dem.get("conversation_id") and (resultat.get("ok") or envoi_id):
+            meta = {"auteur": acteur}
+            if envoi_id:
+                meta["envoi_id"] = envoi_id
+            else:
+                meta["statut"] = "envoye"
             db.executer(
-                "INSERT INTO messages (conversation_id, direction, canal, corps) VALUES (?, 'sortant', ?, ?)",
-                (dem["conversation_id"], canal, texte))
+                "INSERT INTO messages (conversation_id, direction, canal, corps, meta) VALUES (?, 'sortant', ?, ?, ?)",
+                (dem["conversation_id"], canal, texte, json.dumps(meta)))
         db.journal(acteur, "reponse_hote", str(dem["id"]), statut)
         if statut == "envoye":
             self._flash(f"/demandes/{dem['id']}", message="Réponse envoyée à l'hôte.")

@@ -15,7 +15,7 @@ Utilisation
     python run.py sauvegarde              copier la base dans un fichier daté
     python run.py whatsapp                état du branchement WhatsApp
     python run.py whatsapp --verifier     interroger Meta sur le compte
-    python run.py whatsapp --envoyer TEXTE --numero 0151740187
+    python run.py whatsapp --envoyer TEXTE --numero NUMERO_AUTORISE
     python run.py secret                  générer un secret aléatoire
 
 Aucune dépendance à installer : bibliothèque standard Python 3.8+ uniquement.
@@ -69,6 +69,14 @@ def base() -> Base:
     return Base(config.DB_PATH)
 
 
+def base_initialisee() -> Base:
+    nouvelle = not config.DB_PATH.exists()
+    db = base()
+    if nouvelle:
+        seed.initialiser(db, silencieux=True)
+    return db
+
+
 def cmd_initialiser(args) -> int:
     db = base()
     print("Initialisation de l'hôtellerie…")
@@ -92,9 +100,7 @@ def cmd_servir(args) -> int:
 
 
 def cmd_utilisateur(args) -> int:
-    db = base()
-    if not config.DB_PATH.exists():
-        cmd_initialiser(argparse.Namespace(demo=False))
+    db = base_initialisee()
     login = (args.login or input("Identifiant : ")).strip().lower()
     if not login:
         print("Identifiant requis.", file=sys.stderr)
@@ -140,9 +146,7 @@ def cmd_utilisateur(args) -> int:
 
 def cmd_tester(args) -> int:
     """Dialogue avec l'agent depuis le terminal, sans aucun envoi réel."""
-    db = base()
-    if not config.DB_PATH.exists():
-        cmd_initialiser(argparse.Namespace(demo=False))
+    db = base_initialisee()
     from hotellerie.agent.engine import Agent
 
     agent = Agent(db)
@@ -175,7 +179,7 @@ def cmd_tester(args) -> int:
 
 
 def cmd_importer(args) -> int:
-    db = base()
+    db = base_initialisee()
     from hotellerie.knowledge import charger_graine, SEED_PATH
     n = charger_graine(db, ecraser=args.ecraser)
     print(f"{n} fiche(s) importée(s) depuis {SEED_PATH.name}"
@@ -208,9 +212,7 @@ def cmd_whatsapp(args) -> int:
     """Brancher, vérifier et éprouver WhatsApp depuis le terminal."""
     from hotellerie.channels import whatsapp
 
-    db = base()
-    if not config.DB_PATH.exists():
-        cmd_initialiser(argparse.Namespace(demo=False))
+    db = base_initialisee()
 
     if args.rejouer:
         resultat = whatsapp.rejouer(db)
@@ -233,8 +235,8 @@ def cmd_whatsapp(args) -> int:
                   f"{compte.get('display_phone_number') or '—'} · "
                   f"qualité {compte.get('quality_rating') or '—'}")
         if releve["pret"]:
-            print("  → TOUT EST VERT : WhatsApp est prêt.")
-            print("    Écrivez « Bonjour » depuis votre téléphone au numéro WhatsApp Business.")
+            print("  → Contrôles préalables satisfaits ; l'accès au webhook reste à vérifier.")
+            print("    Faites un échange complet depuis un téléphone réel avant l'ouverture.")
         else:
             print("  → Il reste des points à régler : voyez les ✗ ci-dessus.")
         return 0 if releve["pret"] else 1
@@ -247,7 +249,10 @@ def cmd_whatsapp(args) -> int:
             return 0
         print("Message non envoyé : " + (resultat.get("erreur") or "motif inconnu"),
               file=sys.stderr)
-        print("Il reste dans la file d'attente ; « run.py whatsapp --rejouer » le reprendra.")
+        if resultat.get("envoi_id"):
+            print("Le message reste dans la file ; vérifiez-le avant « run.py whatsapp --rejouer ».")
+        else:
+            print("Le message n'a pas été ajouté à la file.")
         return 1
 
     conf = whatsapp.configuration(db)
@@ -256,7 +261,7 @@ def cmd_whatsapp(args) -> int:
     print("WhatsApp — état du branchement")
     print("  Jeton d'accès          : " + ("présent" if conf["token"] else "absent"))
     print("  phone_number_id        : " + (conf["phone_number_id"] or "absent"))
-    print("  Jeton du webhook       : " + (conf["verify_token"] or "absent"))
+    print("  Jeton du webhook       : " + ("présent" if conf["verify_token"] else "absent"))
     print("  Secret d'application   : " + ("présent" if conf["app_secret"] else "absent"))
     print("  Version de l'API       : " + (conf["version"] or "v21.0"))
     print("  Numéro d'essai         : " + (whatsapp.afficher_numero(conf["numero_test"]) or "non renseigné"))

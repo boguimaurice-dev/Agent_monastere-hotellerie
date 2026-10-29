@@ -91,7 +91,7 @@ python3 run.py utilisateur --login X  # créer ou modifier un compte
 python3 run.py tester                 # dialoguer avec l'agent dans le terminal
 python3 run.py whatsapp               # état du branchement WhatsApp
 python3 run.py whatsapp --verifier    # interroger Meta sur le compte
-python3 run.py whatsapp --envoyer "Pax. Essai" --numero 0151740187
+python3 run.py whatsapp --envoyer "Pax. Essai" --numero NUMERO_AUTORISE
 python3 run.py whatsapp --rejouer     # rejouer la file d'attente
 python3 run.py importer [--ecraser]   # réimporter base_connaissances.json
 python3 run.py sauvegarde [dossier]   # copier la base avec la date du jour
@@ -100,6 +100,26 @@ python3 run.py secret                 # générer un secret aléatoire
 
 `python3 run.py tester` est le moyen le plus simple d'éprouver l'agent avant
 de le brancher sur WhatsApp. Aucun message n'est envoyé pour de vrai.
+
+### Prendre le relais et gérer une demande
+
+Dans **Échanges**, ouvrez la conversation puis cliquez sur **Prendre le relais** :
+l'agent cesse de répondre et un frère peut envoyer un message WhatsApp même si
+aucune demande n'a encore été constituée. L'état de ce message dans le fil
+reflète la file d'envoi ; « accepté par WhatsApp » ne garantit pas sa réception.
+Sur une urgence, l'agent met lui-même l'échange en relais. Les notifications de
+relais, d'urgence et les questions non résolues comportent un lien vers l'échange.
+
+Les attributions refusent les chambres occupées, bloquées, inactives, trop
+petites ou les dates incorrectes. **Une seule chambre est gérée par dossier** :
+pour un groupe nécessitant plusieurs chambres, utiliser plusieurs dossiers ou
+un traitement manuel jusqu'à l'ajout d'une attribution multi-chambres. Le délai
+de réponse n'est annoncé que s'il est renseigné dans les paramètres ; faites-le
+valider par la communauté avant de l'indiquer.
+
+La suppression d'une fiche ne supprime **pas** les conversations, notifications
+et journaux associés. Définissez et appliquez une procédure complète de
+conservation et d'effacement avant de traiter des données personnelles réelles.
 
 ### Vérifications automatiques
 
@@ -147,8 +167,13 @@ message d'essai**. C'est là que tout se joue, sans ligne de commande.
 | `wa_verify_token` | un jeton secret choisi par vous pour le webhook (aucun jeton par défaut) |
 | `wa_app_secret` | le secret de l'application (vérification de signature) |
 | `wa_api_version` | version de l'API (défaut `v21.0`) |
-| `wa_numero_test` | le numéro qui reçoit les essais (défaut `2250151740187`) |
+| `wa_numero_test` | le numéro autorisé qui reçoit les essais (aucun numéro par défaut) |
 | `site_url` | l'adresse publique HTTPS du tableau de bord |
+
+Le diagnostic vérifie des éléments de configuration, mais ne prouve pas que
+Meta peut atteindre le webhook ni que les messages sont reçus : un essai réel
+aller-retour reste indispensable. Le rejeu de la file est manuel ; vérifiez les
+messages et leur contexte avant toute relance.
 
 Les valeurs sont conservées dans la base, sauf si une variable
 d'environnement du même nom existe (celle-ci garde la priorité). Un fichier
@@ -179,9 +204,9 @@ renseignée. Meta exige **HTTPS** : voir la section 6 pour l'hébergement.
 Déclarer `<adresse-affichée>/webhook/whatsapp` dans Meta. Le tunnel ne dure
 que le temps du terminal : c'est fait pour l'essai, pas pour la production.
 
-### 4.4 Vérifier — le parcours d'essai (numéro 0151740187)
+### 4.4 Vérifier — le parcours d'essai
 
-1. Dans l'application Meta, ajouter **0151740187** aux « Destinataires de test ».
+1. Dans l'application Meta, ajouter votre propre numéro aux « Destinataires de test ».
 2. Depuis ce téléphone, écrire « Bonjour » au numéro WhatsApp Business.
 3. L'agent répond dans la conversation ; l'échange apparaît dans « Échanges ».
 4. En cas d'échec, le motif est lisible dans « WhatsApp » (derniers messages) et

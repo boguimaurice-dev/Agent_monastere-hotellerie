@@ -61,6 +61,7 @@ class Agent:
         conv = self._conversation(conversation_id, canal, telephone, nom_contact)
         if conv.get("humain_requis"):
             self._consigner(conv["id"], "entrant", texte, canal)
+            self.db.executer("UPDATE conversations SET maj = datetime('now','localtime') WHERE id = ?", (conv["id"],))
             return ""
         if not config.drapeau_parametre(self.db, "agent_actif", True):
             self.db.executer("UPDATE conversations SET humain_requis = 1 WHERE id = ?", (conv["id"],))
@@ -86,12 +87,14 @@ class Agent:
 
         # 1. L'urgence passe avant tout. On ne fait pas attendre.
         if C.est_urgence(texte):
+            d["humain_requis"] = 1
+            d["etape"] = "relais"
             try:
                 if canal not in ("terminal", "test"):
                     notify.alerter_urgence(self.db, conv["id"], texte)
             except Exception as exc:
                 log.warning("Alerte urgence non transmise : %s", exc)
-            return prompts.URGENCE, etape
+            return prompts.URGENCE, "relais"
 
         # 2. L'hôte demande un frère : l'agent se tait, pour de bon.
         if C.demande_humain(texte):
@@ -107,7 +110,16 @@ class Agent:
 
         # 3. Annulation d'une demande déjà transmise.
         if d.get("demande_id") and C.extraire_annulation(texte):
+            if not metier.demande(self.db, d["demande_id"]):
+                d.pop("demande_id", None)
+                return prompts.ANNULATION_SANS_DOSSIER, etape
             metier.changer_statut(self.db, d["demande_id"], "annulee", "hote")
+            d["etape"] = "annule"
+            if canal not in ("terminal", "test"):
+                try:
+                    notify.notifier_hoteliers(self.db, d["demande_id"], motif="annulation_hote")
+                except Exception as exc:
+                    log.warning("Annulation non notifiée : %s", exc)
             return prompts.ANNULATION, "annule"
         if C.extraire_annulation(texte):
             return prompts.ANNULATION_SANS_DOSSIER, etape
@@ -127,10 +139,19 @@ class Agent:
 
         # 5. Après transmission, la porte reste ouverte.
         if etape in ("transmis", "annule"):
-            if demande or (not question and self._a_des_infos(d)):
+            if demande:
                 d.clear()
                 d.update({"etape": "accueil", "relances": 0, "humain_requis": 0})
                 etape = "accueil"
+            elif re.search(r"\b(modifier|modification|corriger|changer|changement)\b", C._preparer(texte)):
+                d["humain_requis"] = 1
+                d["etape"] = "relais"
+                if canal not in ("terminal", "test"):
+                    try:
+                        notify.signaler_relais(self.db, conv["id"], texte, demande_id=d.get("demande_id"))
+                    except Exception as exc:
+                        log.warning("Modification non transmise : %s", exc)
+                return prompts.RELAIS_HUMAIN, "relais"
             elif question:
                 return self._question(texte, conv), etape
             else:
@@ -354,7 +375,9 @@ class Agent:
         except Exception as exc:  # jamais bloquant : la demande est en base
             log.warning("Fiche non transmise : %s", exc)
         dem = metier.demande(self.db, identifiant) or {}
-        return prompts.TRANSMISSION.format(reference=dem.get("reference") or ""), "transmis"
+        delai = config.parametre(self.db, "agent_delai_reponse", "").strip()
+        indication = ("Délai indicatif communiqué par la maison : " + delai + ".") if delai else ""
+        return prompts.TRANSMISSION.format(reference=dem.get("reference") or "", delai=indication), "transmis"
 
     def _demande_depuis(self, d: dict, conv) -> dict:
         return {
@@ -455,7 +478,7 @@ class Agent:
     def _enregistrer(self, conv, d: dict, etat: str) -> None:
         self.db.executer(
             "UPDATE conversations SET etat = ?, donnees = ?, relances = ?, humain_requis = ?, "
-            "demande_id = COALESCE(?, demande_id), maj = datetime('now','localtime') WHERE id = ?",
+            "demande_id = ?, maj = datetime('now','localtime') WHERE id = ?",
             (etat or d.get("etape") or "accueil", json.dumps(d, ensure_ascii=False),
              int(d.get("relances") or 0), int(d.get("humain_requis") or 0),
              d.get("demande_id"), conv["id"]))

@@ -234,24 +234,66 @@ def mettre_a_jour(db, identifiant, champs: dict) -> None:
                 "WHERE id = ?", valeurs)
 
 
+def _verifier_attribution(db, dem, chambre_id):
+    """Valide l'attribution pour un séjour (le verrou de base doit être tenu)."""
+    chambre_choisie = chambre(db, chambre_id)
+    if not chambre_choisie or not chambre_choisie.get("active"):
+        raise ValueError("Cette chambre n'existe pas ou n'est pas active.")
+    arrivee, depart = lire_date(dem.get("date_arrivee")), lire_date(dem.get("date_depart"))
+    if not arrivee or not depart or depart <= arrivee:
+        raise ValueError("Indiquez des dates d'arrivée et de départ valides avant l'attribution.")
+    if int(dem.get("nb_personnes") or 1) > int(chambre_choisie.get("capacite") or 1):
+        raise ValueError("Cette chambre ne peut pas accueillir toutes les personnes. "
+                         "L'attribution de plusieurs chambres n'est pas encore disponible.")
+    chevauchement = db.ligne(
+        "SELECT id FROM demandes WHERE chambre_id=? AND id<>? "
+        "AND statut IN ('acceptee','confirmee') AND date_arrivee < ? "
+        "AND COALESCE(date_depart, date(date_arrivee, '+1 day')) > ? LIMIT 1",
+        (chambre_id, dem["id"], depart.isoformat(), arrivee.isoformat()))
+    blocage = db.ligne("SELECT id FROM blocages WHERE chambre_id=? AND date_debut < ? "
+                       "AND date_fin > ? LIMIT 1", (chambre_id, depart.isoformat(), arrivee.isoformat()))
+    if chevauchement or blocage:
+        raise ValueError("Cette chambre est occupée ou bloquée sur cette période.")
+
+
 def changer_statut(db, identifiant, statut: str, acteur: str = "") -> None:
     if statut not in STATUTS:
-        return
-    db.executer(
-        "UPDATE demandes SET statut = ?, decision_le = datetime('now','localtime'), "
-        "decide_par = ?, maj_le = datetime('now','localtime') WHERE id = ?",
-        (statut, acteur or "", int(identifiant)))
+        raise ValueError("Statut inconnu.")
+    with db._verrou:
+        dem = demande(db, identifiant)
+        if not dem:
+            raise ValueError("Demande introuvable.")
+        if statut == "confirmee" and not dem.get("chambre_id"):
+            raise ValueError("Attribuez d'abord une chambre disponible pour confirmer la demande.")
+        if statut in STATUTS_OCCUPANTS and dem.get("chambre_id"):
+            _verifier_attribution(db, dem, dem["chambre_id"])
+        db.executer(
+            "UPDATE demandes SET statut = ?, decision_le = datetime('now','localtime'), "
+            "decide_par = ?, maj_le = datetime('now','localtime') WHERE id = ?",
+            (statut, acteur or "", int(identifiant)))
     db.journal(acteur or "systeme", "statut_change", str(identifiant), statut)
 
 
 def attribuer_chambre(db, identifiant, chambre_id, acteur: str = "") -> None:
-    if chambre_id in (None, "", "0"):
-        db.executer("UPDATE demandes SET chambre_id = NULL WHERE id = ?", (int(identifiant),))
-    else:
-        db.executer("UPDATE demandes SET chambre_id = ? WHERE id = ?",
-                    (int(chambre_id), int(identifiant)))
-        db.executer("UPDATE demandes SET statut = 'confirmee', decision_le = datetime('now','localtime'), "
-                    "decide_par = ? WHERE id = ?", (acteur or "", int(identifiant)))
+    with db._verrou:
+        dem = demande(db, identifiant)
+        if not dem:
+            raise ValueError("Demande introuvable.")
+        if chambre_id in (None, "", "0", 0):
+            db.executer("UPDATE demandes SET chambre_id = NULL, statut = CASE WHEN statut = 'confirmee' "
+                        "THEN 'en_attente' ELSE statut END WHERE id = ?", (int(identifiant),))
+        else:
+            try:
+                chambre_id = int(chambre_id)
+            except (ValueError, TypeError):
+                raise ValueError("Chambre invalide.")
+            if dem["statut"] in ("refusee", "annulee", "sejour_termine"):
+                raise ValueError("Réouvrez la demande avant d'attribuer une chambre.")
+            _verifier_attribution(db, dem, chambre_id)
+            db.executer("UPDATE demandes SET chambre_id = ?, statut = 'confirmee', "
+                        "decision_le = datetime('now','localtime'), decide_par = ?, "
+                        "maj_le = datetime('now','localtime') WHERE id = ?",
+                        (chambre_id, acteur or "", int(identifiant)))
     db.journal(acteur or "systeme", "chambre_attribuee", str(identifiant), str(chambre_id or ""))
 
 
@@ -279,7 +321,7 @@ def demandes(db, statut: str = "", recherche: str = "", limite: int = 200) -> li
 # ---------------------------------------------------------------------------
 # Disponibilités
 # ---------------------------------------------------------------------------
-def _chambres_occupees(db, arrivee: str, depart: str) -> dict:
+def _chambres_occupees(db, arrivee: str, depart: str, exclure_demande_id=None) -> dict:
     """Chambre → motif d'occupation sur la période (arrivée incluse, départ exclu)."""
     occupees = {}
     for ligne in db.lignes(
@@ -287,8 +329,9 @@ def _chambres_occupees(db, arrivee: str, depart: str) -> dict:
         "WHERE d.statut IN ('acceptee', 'confirmee') AND d.chambre_id IS NOT NULL "
         "AND d.date_arrivee IS NOT NULL "
         "AND d.date_arrivee < ? "
-        "AND COALESCE(d.date_depart, date(d.date_arrivee, '+1 day')) > ?",
-        (depart, arrivee)):
+        "AND COALESCE(d.date_depart, date(d.date_arrivee, '+1 day')) > ? "
+        "AND (? IS NULL OR d.id <> ?)",
+        (depart, arrivee, exclure_demande_id, exclure_demande_id)):
         occupees[ligne["chambre_id"]] = f"séjour {ligne['reference'] or ''}".strip()
     for ligne in db.lignes(
         "SELECT chambre_id, motif FROM blocages WHERE date_debut < ? AND date_fin > ?",
@@ -297,7 +340,7 @@ def _chambres_occupees(db, arrivee: str, depart: str) -> dict:
     return occupees
 
 
-def verifier_disponibilite(db, arrivee, depart, nb_personnes: int = 1) -> dict:
+def verifier_disponibilite(db, arrivee, depart, nb_personnes: int = 1, exclure_demande_id=None) -> dict:
     """Calcule ce que les frères doivent savoir avant de discerner.
 
     L'agent ne s'en sert jamais pour dire « il y a de la place » : la
@@ -316,8 +359,8 @@ def verifier_disponibilite(db, arrivee, depart, nb_personnes: int = 1) -> dict:
         "nuits": nuits(arrivee_iso, depart_iso),
         "motif": "",
     }
-    if not arrivee_iso or not depart_iso:
-        resultat["motif"] = "dates incomplètes"
+    if not lire_date(arrivee_iso) or not lire_date(depart_iso):
+        resultat["motif"] = "dates absentes ou invalides"
         return resultat
     if depart_iso <= arrivee_iso:
         resultat["motif"] = "la date de départ doit suivre la date d'arrivée"
@@ -326,7 +369,7 @@ def verifier_disponibilite(db, arrivee, depart, nb_personnes: int = 1) -> dict:
         nb_personnes = max(1, int(nb_personnes or 1))
     except (TypeError, ValueError):
         nb_personnes = 1
-    occupees = _chambres_occupees(db, arrivee_iso, depart_iso)
+    occupees = _chambres_occupees(db, arrivee_iso, depart_iso, exclure_demande_id)
     libres = []
     for c in actives:
         if c["id"] in occupees:
@@ -349,9 +392,25 @@ def verifier_disponibilite(db, arrivee, depart, nb_personnes: int = 1) -> dict:
 # Blocages
 # ---------------------------------------------------------------------------
 def creer_blocage(db, chambre_id, debut, fin, motif: str = "") -> int:
-    return int(db.executer(
-        "INSERT INTO blocages (chambre_id, date_debut, date_fin, motif) VALUES (?, ?, ?, ?)",
-        (int(chambre_id), iso(debut), iso(fin), (motif or "").strip())))
+    debut_date, fin_date = lire_date(debut), lire_date(fin)
+    if not debut_date or not fin_date or fin_date <= debut_date:
+        raise ValueError("La date de fin doit suivre la date de début.")
+    try:
+        chambre_id = int(chambre_id)
+    except (ValueError, TypeError):
+        raise ValueError("Chambre invalide.")
+    with db._verrou:
+        if not chambre(db, chambre_id):
+            raise ValueError("Chambre introuvable.")
+        conflit = db.ligne("SELECT id FROM demandes WHERE chambre_id=? "
+                           "AND statut IN ('acceptee','confirmee') AND date_arrivee < ? "
+                           "AND COALESCE(date_depart, date(date_arrivee, '+1 day')) > ? LIMIT 1",
+                           (chambre_id, fin_date.isoformat(), debut_date.isoformat()))
+        if conflit:
+            raise ValueError("Impossible de bloquer cette chambre : un séjour est déjà attribué sur cette période.")
+        return int(db.executer(
+            "INSERT INTO blocages (chambre_id, date_debut, date_fin, motif) VALUES (?, ?, ?, ?)",
+            (chambre_id, debut_date.isoformat(), fin_date.isoformat(), (motif or "").strip())))
 
 
 def supprimer_blocage(db, identifiant) -> None:
@@ -381,7 +440,8 @@ def occupation_mois(db, annee: int, mois: int) -> dict:
         "AND d.date_arrivee <= ? AND COALESCE(d.date_depart, d.date_arrivee) >= ?",
         (dernier.isoformat(), premier.isoformat())):
         jour = max(lire_date(d["date_arrivee"]), premier)
-        fin = min(lire_date(d["date_depart"]) or lire_date(d["date_arrivee"]), dernier)
+        fin = min(lire_date(d["date_depart"]) or lire_date(d["date_arrivee"]),
+                  dernier + dt.timedelta(days=1))
         while jour < fin:
             cases[(jour.isoformat(), d["chambre_id"])] = {
                 "type": "sejour", "reference": d["reference"], "demande_id": d["id"],
@@ -396,7 +456,7 @@ def occupation_mois(db, annee: int, mois: int) -> dict:
         "SELECT * FROM blocages WHERE date_debut <= ? AND date_fin >= ?",
         (dernier.isoformat(), premier.isoformat())):
         jour = max(lire_date(b["date_debut"]), premier)
-        fin = min(lire_date(b["date_fin"]), dernier)
+        fin = min(lire_date(b["date_fin"]), dernier + dt.timedelta(days=1))
         while jour < fin:
             cases[(jour.isoformat(), b["chambre_id"])] = {
                 "type": "blocage", "motif": b["motif"], "blocage_id": b["id"]}

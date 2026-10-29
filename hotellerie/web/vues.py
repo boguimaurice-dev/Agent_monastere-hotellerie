@@ -27,6 +27,25 @@ def _lien_demande(dem) -> str:
     return f'<a href="/demandes/{dem["id"]}">{esc(dem.get("reference") or dem["id"])}</a>'
 
 
+def _libelle_message(db, message):
+    if message["direction"] == "entrant":
+        return "Hôte"
+    try:
+        meta = json.loads(message.get("meta") or "{}")
+        if not isinstance(meta, dict):
+            meta = {}
+    except (TypeError, ValueError):
+        meta = {}
+    if not meta.get("auteur"):
+        return "Agent"
+    libelle = "Frère / équipe"
+    statut = meta.get("statut", "")
+    if meta.get("envoi_id"):
+        statut = db.valeur("SELECT statut FROM envois WHERE id = ?", (meta["envoi_id"],), defaut="")
+    return libelle + ({"envoye": " · accepté par WhatsApp" if meta.get("envoi_id") else " · envoyé",
+                       "en_attente": " · en attente d'envoi", "echoue": " · envoi échoué"}.get(statut, ""))
+
+
 def _periode(dem) -> str:
     if not dem.get("date_arrivee"):
         return "—"
@@ -105,7 +124,8 @@ def tableau_de_bord(db, user, message: str = "", erreur: str = "") -> str:
     systeme = []
     systeme.append("Agent : " + ("actif" if config.drapeau_parametre(db, "agent_actif", True) else "en relais humain"))
     wa = bool(config.parametre(db, "wa_token", "") and config.parametre(db, "wa_phone_number_id", ""))
-    systeme.append("WhatsApp : " + ("configuré" if wa else "non configuré (les messages ne partent pas)"))
+    systeme.append("WhatsApp : " + ("jeton et identifiant présents ; webhook et échange réel à vérifier" if wa
+                                     else "non configuré (les messages ne partent pas)"))
     smtp = bool(config.parametre(db, "smtp_hote", ""))
     systeme.append("Courriel : " + ("configuré" if smtp else "non configuré"))
     systeme.append("Réponses : base de connaissances, sans génération IA")
@@ -218,7 +238,8 @@ def demande_nouvelle(db, user, csrf: str, valeurs=None, message: str = "",
 def demande_detail(db, user, dem, csrf: str, message: str = "", erreur: str = "") -> str:
     identifiant = dem["id"]
     dispo = metier.verifier_disponibilite(db, dem.get("date_arrivee"), dem.get("date_depart"),
-                                           dem.get("nb_personnes") or 1)
+                                           dem.get("nb_personnes") or 1,
+                                           exclure_demande_id=dem.get("id"))
     chambre = metier.chambre(db, dem.get("chambre_id"))
     messages = []
     if dem.get("conversation_id"):
@@ -249,7 +270,7 @@ def demande_detail(db, user, dem, csrf: str, message: str = "", erreur: str = ""
     options_chambre = '<option value="0">— aucune —</option>' + "".join(
         f'<option value="{c["id"]}" {"selected" if c["id"] == dem.get("chambre_id") else ""}>'
         f'{esc(c["nom"])} ({c["capacite"]} pl.) '
-        f'{"libre" if c["id"] in libres else "occupée"}</option>'
+        f'{"attribuée à cette demande" if c["id"] == dem.get("chambre_id") else ("libre" if c["id"] in libres else "occupée")}</option>'
         for c in metier.chambres(db))
 
     dispo_html = (
@@ -263,7 +284,7 @@ def demande_detail(db, user, dem, csrf: str, message: str = "", erreur: str = ""
         bulles = []
         for m in messages:
             classe = "bulle-hote" if m["direction"] == "entrant" else "bulle-agent"
-            nom = "Hôte" if m["direction"] == "entrant" else "Agent"
+            nom = _libelle_message(db, m)
             bulles.append(f'<div class="bulle {classe}"><div class="bulle-meta">{esc(nom)} · '
                           f'{esc(m["horodatage"])} · {esc(m["canal"])}</div>{esc(m["corps"])}</div>')
         fil = f'<div class="transcription">{"".join(bulles)}</div>'
@@ -308,7 +329,7 @@ def demande_detail(db, user, dem, csrf: str, message: str = "", erreur: str = ""
       <div><button class="btn" type="submit">Attribuer</button></div>
     </form>
     <p class="petit muted">Chambre actuelle : {esc((chambre or {}).get('nom') or 'non attribuée')}.
-    Attribuer une chambre confirme la demande.</p>''')}
+    Attribuer une chambre confirme la demande. Une seule chambre peut être attribuée par dossier ; les groupes nécessitant plusieurs chambres doivent être traités séparément.</p>''')}
 </div>
 {carte("Répondre à l'hôte", f'''<form method="post" action="/demandes/{identifiant}/repondre">
   {_csrf(csrf)}
@@ -327,10 +348,10 @@ def demande_detail(db, user, dem, csrf: str, message: str = "", erreur: str = ""
 </form>''')}
 {carte("Historique de l'échange", fil)}
 {carte("Transmissions", notif_html)}
-{carte("", f'''<form method="post" action="/demandes/{identifiant}/supprimer" onsubmit="return confirm('Supprimer définitivement cette demande et ses données personnelles ?');">
+{carte("", f'''<form method="post" action="/demandes/{identifiant}/supprimer" onsubmit="return confirm('Supprimer cette fiche ? Les échanges et journaux associés restent conservés.');">
   {_csrf(csrf)}
   <button class="btn btn-danger btn-mini" type="submit">Supprimer la demande</button>
-  <span class="petit muted">Effacement demandé par un hôte, par exemple.</span>
+  <span class="petit muted">Supprime cette fiche uniquement : les échanges, notifications et journaux peuvent rester conservés.</span>
 </form>''')}
 """
     return page(f"Demande {dem.get('reference')}", contenu, user, "demandes", message, erreur)
@@ -591,7 +612,7 @@ def conversation_detail(db, user, conv, csrf: str, message: str = "",
     for m in messages:
         classe = "bulle-hote" if m["direction"] == "entrant" else "bulle-agent"
         bulles.append(f'<div class="bulle {classe}"><div class="bulle-meta">'
-                      f'{"Hôte" if m["direction"] == "entrant" else "Agent"} · '
+                      f'{esc(_libelle_message(db, m))} · '
                       f'{esc(m["horodatage"])} · {esc(m["canal"])}</div>'
                       f'{esc(m["corps"]) or "(silence)"}</div>')
     donnees = {}
@@ -604,6 +625,20 @@ def conversation_detail(db, user, conv, csrf: str, message: str = "",
                else "Prendre le relais (l'agent se taira)")
     demande = (f'<a href="/demandes/{conv["demande_id"]}">Voir le dossier</a>'
                if conv.get("demande_id") else "Aucun dossier constitué")
+    adresse = urllib.parse.quote(str(conv['id']), safe="")
+    if conv.get("canal") == "whatsapp" and conv.get("telephone"):
+        if conv.get("humain_requis"):
+            reponse_humaine = carte("Répondre à l'hôte", f'''<form method="post" action="/conversations/{esc(adresse)}/repondre">
+      {_csrf(csrf)}
+      <label for="message-relais">Votre message WhatsApp</label>
+      <textarea id="message-relais" name="message" maxlength="4000" required></textarea>
+      <div class="barre-actions"><button class="btn" type="submit">Envoyer à l'hôte</button></div>
+      <p class="petit muted">Si l'envoi échoue, le message reste dans la file WhatsApp. La réception effective dépend de Meta et de la fenêtre de 24 heures.</p>
+    </form>''')
+        else:
+            reponse_humaine = carte("Répondre à l'hôte", '<p>Pour éviter une réponse simultanée de l’agent, prenez d’abord le relais.</p>')
+    else:
+        reponse_humaine = ''
     contenu = f"""
 <h1>Échange {esc(conv['id'])}</h1>
 <p class="sous-titre">{esc(conv.get('nom_affiche') or 'hôte non identifié')} ·
@@ -614,6 +649,7 @@ def conversation_detail(db, user, conv, csrf: str, message: str = "",
   {_csrf(csrf)}<input type="hidden" name="action" value="{action}">
   <button class="btn" type="submit">{esc(libelle)}</button>
 </form>''')}
+{reponse_humaine}
 """
     return page("Échange", contenu, user, "conversations", message, erreur)
 
@@ -629,13 +665,15 @@ def notifications_liste(db, user, message: str = "", erreur: str = "") -> str:
     for n in liste:
         ref = (f'<a href="/demandes/{n["demande_id"]}">{esc(n["reference"])}</a>'
                if n.get("reference") else "—")
-        lignes.append([esc((n["horodatage"] or "")[:16]), ref, esc(n["canal"]),
-                       esc(n["destinataire"] or "—"), badge(n["statut"]),
-                       esc(n["erreur"] or "—")])
+        conversation = (f'<a href="/conversations/{esc(urllib.parse.quote(n["conversation_id"], safe=""))}">Voir l’échange</a>'
+                        if n.get("conversation_id") else "—")
+        lignes.append([esc((n["horodatage"] or "")[:16]), esc(n.get("sujet") or "—"),
+                       ref, conversation, esc(n["canal"]), esc(n["destinataire"] or "—"),
+                       badge(n["statut"]), esc(n["erreur"] or "—")])
     contenu = f"""
 <h1>Notifications</h1>
 <p class="sous-titre">Ce qui est parti, ce qui n'est pas parti, et pourquoi.</p>
-{carte("", tableau(["Date", "Dossier", "Canal", "Destinataire", "Statut", "Motif"],
+{carte("", tableau(["Date", "Sujet", "Dossier", "Échange", "Canal", "Destinataire", "Statut", "Motif"],
       lignes, "Aucune transmission."))}
 """
     return page("Notifications", contenu, user, "notifications", message, erreur)
@@ -668,7 +706,7 @@ GROUPES_PARAMETRES = [
     ("WhatsApp (Meta Cloud API)", [
         ("wa_token", "Jeton permanent", "secret"),
         ("wa_phone_number_id", "Identifiant du numéro (phone_number_id)", "texte"),
-        ("wa_verify_token", "Jeton de vérification du webhook", "texte"),
+        ("wa_verify_token", "Jeton de vérification du webhook", "secret"),
         ("wa_app_secret", "Secret de l'application (signature)", "secret"),
     ]),
     ("Relais vers les frères", [
@@ -713,7 +751,7 @@ def parametres(db, user, csrf: str, message: str = "", erreur: str = "") -> str:
                               f'<option value="0" {"" if actif else "selected"}>non</option></select>')
             elif type_ == "secret":
                 affiche = MASQUE if valeur else ""
-                html_champ = (f'<input type="text" name="{cle}" value="{esc(affiche)}" '
+                html_champ = (f'<input type="password" name="{cle}" value="{esc(affiche)}" '
                               f'autocomplete="off" placeholder="(vide)">')
             else:
                 html_champ = f'<input type="text" name="{cle}" value="{esc(valeur)}">'
@@ -737,7 +775,7 @@ def parametres(db, user, csrf: str, message: str = "", erreur: str = "") -> str:
 # ===========================================================================
 WHATSAPP_CLEFS = ["wa_token", "wa_phone_number_id", "wa_verify_token", "wa_app_secret",
                   "wa_api_version", "wa_numero_test", "site_url"]
-WHATSAPP_SECRETS = {"wa_token", "wa_app_secret"}
+WHATSAPP_SECRETS = {"wa_token", "wa_verify_token", "wa_app_secret"}
 
 
 def whatsapp_page(db, user, csrf: str, message: str = "", erreur: str = "") -> str:
@@ -745,7 +783,7 @@ def whatsapp_page(db, user, csrf: str, message: str = "", erreur: str = "") -> s
 
     conf = whatsapp.configuration(db)
     pret = bool(conf["token"] and conf["phone_number_id"])
-    numero_essai = conf["numero_test"] or "2250151740187"
+    numero_essai = conf["numero_test"] or ""
     url_webhook = ((conf["site_url"] + "/webhook/whatsapp") if conf["site_url"]
                    else "— (renseignez l'adresse publique ci-dessous)")
 
@@ -758,10 +796,12 @@ def whatsapp_page(db, user, csrf: str, message: str = "", erreur: str = "") -> s
             dernier = None
 
     diagnostic_fait = bool(dernier and dernier.get("etapes"))
-    essentiels = [e for e in (dernier or {}).get("etapes", []) or []
-                  if "Secret" not in (e.get("etape") or "")]
+    est_diagnostic = bool(dernier and dernier.get("type") == "configuration")
+    essentiels = (dernier or {}).get("etapes", []) or []
     manquants = [e for e in essentiels if not e.get("ok")]
-    tout_vert = diagnostic_fait and not manquants
+    # Un test d'envoi seul, ou un ancien diagnostic, ne prouve jamais que
+    # le webhook est opérationnel.
+    tout_vert = est_diagnostic and bool(dernier.get("pret")) and not manquants
 
     etapes_html = ""
     if diagnostic_fait:
@@ -772,10 +812,13 @@ def whatsapp_page(db, user, csrf: str, message: str = "", erreur: str = "") -> s
             elements.append(f'<li><strong style="{couleur}">{marque} {esc(e.get("etape"))}</strong>'
                             f' — {esc(e.get("detail"))}</li>')
         if tout_vert:
-            verdict = ('<p><span class="badge b-envoye">Prêt : oui — tout est vert</span></p>')
-        else:
-            verdict = (f'<p><span class="badge b-en_attente">Prêt : non — '
+            verdict = ('<p><span class="badge b-envoye">Contrôles préalables satisfaits</span> '
+                       'La réception et la réponse réelles restent à tester.</p>')
+        elif est_diagnostic:
+            verdict = (f'<p><span class="badge b-en_attente">Configuration incomplète — '
                        f'{len(manquants)} point(s) à régler</span></p>')
+        else:
+            verdict = '<p>Résultat d’essai uniquement ; lancez le diagnostic complet.</p>'
         etapes_html = (f'<p class="petit muted">Relevé du {esc(dernier.get("horodatage", ""))}</p>'
                        + verdict + f'<ul>{"".join(elements)}</ul>')
         if dernier.get("compte"):
@@ -800,7 +843,7 @@ def whatsapp_page(db, user, csrf: str, message: str = "", erreur: str = "") -> s
         v = config.parametre(db, cle, "") if valeur is None else valeur
         if cle in WHATSAPP_SECRETS:
             v = MASQUE if v else ""
-            html = (f'<input type="text" name="{cle}" value="{esc(v)}" autocomplete="off" '
+            html = (f'<input type="password" name="{cle}" value="{esc(v)}" autocomplete="off" '
                     f'placeholder="(vide)">')
         else:
             html = (f'<input type="text" name="{cle}" value="{esc(v)}" '
@@ -812,8 +855,8 @@ def whatsapp_page(db, user, csrf: str, message: str = "", erreur: str = "") -> s
       <em>Business</em>, puis ajoutez le produit <strong>WhatsApp</strong>.</li>
   <li>Dans <strong>WhatsApp → API Setup</strong>, relevez le <em>Phone number ID</em>
       et générez un <strong>jeton permanent</strong> (utilisateur système).</li>
-  <li>Ajoutez votre numéro <strong>0151740187</strong> dans
-      <strong>« Destinataires de test »</strong> (ou passez le numéro Business en production).</li>
+  <li>Ajoutez votre numéro d'essai dans <strong>« Destinataires de test »</strong>
+      (ou passez le numéro Business en production).</li>
   <li>Dans <strong>Configuration → Webhook</strong>, collez l'adresse ci-dessous et le
       jeton de vérification, puis abonnez-vous au champ <strong>messages</strong>.
       L'adresse doit être en <strong>HTTPS public</strong> (Caddy devant le serveur).</li>
@@ -824,27 +867,29 @@ def whatsapp_page(db, user, csrf: str, message: str = "", erreur: str = "") -> s
 
     if tout_vert:
         classe_bandeau = "alerte-ok"
-        bandeau = ("Tout est vert : WhatsApp est prêt. Écrivez « Bonjour » depuis "
-                   + whatsapp.afficher_numero(numero_essai)
-                   + " au numéro WhatsApp Business pour l'essai réel.")
-    elif diagnostic_fait:
+        bandeau = ("Les contrôles préalables sont satisfaits. Il reste à vérifier le webhook "
+                   "et un échange complet avec un téléphone réel.")
+    elif est_diagnostic:
         noms = ", ".join(e.get("etape") or "?" for e in manquants) or "—"
         classe_bandeau = "alerte-info"
         bandeau = f"Il reste {len(manquants)} point(s) à régler : {noms}."
+    elif diagnostic_fait:
+        classe_bandeau = "alerte-info"
+        bandeau = "Un essai seul ne vérifie pas le webhook. Lancez le diagnostic complet et un échange réel."
     elif pret:
         classe_bandeau = "alerte-ok"
         bandeau = ("Réglages présents. Lancez « Vérifier le compte » pour confirmer "
                    "que tout est vert.")
     else:
         classe_bandeau = "alerte-info"
-        bandeau = ("WhatsApp n’est pas encore configuré : les réponses restent dans la "
-                   "file d’attente, rien n’est perdu.")
+        bandeau = ("WhatsApp n’est pas encore configuré. Les envois en échec doivent "
+                   "être surveillés dans la file et repris manuellement.")
     if file_attente:
         bandeau += f" — {len(file_attente)} message(s) en attente."
 
     contenu = f"""
 <h1>Brancher WhatsApp</h1>
-<p class="sous-titre">Meta Cloud API — le numéro de l'hôtellerie répond aux hôtes, 24 h/24.</p>
+<p class="sous-titre">Meta Cloud API — vérifiez la configuration et testez le canal avant de recevoir des hôtes.</p>
 <div class="alerte {classe_bandeau}">
   {esc(bandeau)}
 </div>
@@ -865,7 +910,7 @@ def whatsapp_page(db, user, csrf: str, message: str = "", erreur: str = "") -> s
   </form>''')}
   {carte("Adresse à déclarer dans Meta", f'''<dl class="fiche">
     <dt>URL du webhook</dt><dd class="mono">{esc(url_webhook)}</dd>
-    <dt>Jeton de vérification</dt><dd class="mono">{esc(conf.get("verify_token") or "—")}</dd>
+    <dt>Jeton de vérification</dt><dd>{"configuré (masqué)" if conf.get("verify_token") else "non configuré"}</dd>
     <dt>Champ à s'abonner</dt><dd class="mono">messages</dd>
   </dl>
   <form method="post" action="/whatsapp/verifier" class="barre-actions">
@@ -880,7 +925,7 @@ def whatsapp_page(db, user, csrf: str, message: str = "", erreur: str = "") -> s
     {_csrf(csrf)}
     <label for="numero">Destinataire</label>
     <input type="text" id="numero" name="numero" value="{esc(numero_essai)}">
-    <p class="petit muted">Format international : +225 01 51 74 01 87.</p>
+    <p class="petit muted">Indiquez un numéro d'essai autorisé par Meta, au format international.</p>
     <label for="message_essai">Message</label>
     <textarea id="message_essai" name="message" style="min-height:90px">Pax. Ceci est un message d'essai de l'hôtellerie du Monastère Sainte-Marie de Bouaké. Que Dieu vous garde.</textarea>
     <div class="barre-actions"><button class="btn" type="submit">Envoyer l'essai</button></div>

@@ -78,7 +78,8 @@ def composer_fiche(db, dem):
     hote = f"{dem.get('prenom', '')} {dem.get('nom', '')}".strip() or "hôte non identifié"
     dispo = metier.verifier_disponibilite(db, dem.get("date_arrivee"),
                                            dem.get("date_depart"),
-                                           dem.get("nb_personnes") or 1)
+                                           dem.get("nb_personnes") or 1,
+                                           exclure_demande_id=dem.get("id"))
     sujet = (f"[Hôtellerie] {dem.get('reference') or ''} — {hote} — "
              f"{metier.format_date(dem.get('date_arrivee'))} → "
              f"{metier.format_date(dem.get('date_depart'))}")
@@ -95,6 +96,7 @@ def composer_fiche(db, dem):
         f"Besoins     : {_besoins(dem)}",
         f"Reçue le    : {dem.get('cree_le') or ''}",
         f"Source      : {dem.get('source') or 'agent'}",
+        f"Statut      : {metier.libelle_statut(dem.get('statut'))}",
     ]
     if dem.get("message"):
         lignes += ["", "Message de l'hôte :", "  " + str(dem["message"]).replace("\n", "\n  ")]
@@ -116,12 +118,13 @@ def composer_fiche(db, dem):
 # ---------------------------------------------------------------------------
 # Journal des transmissions
 # ---------------------------------------------------------------------------
-def _consigner(db, demande_id, canal, destinataire, sujet, statut, erreur="") -> None:
+def _consigner(db, demande_id, canal, destinataire, sujet, statut, erreur="", conversation_id="") -> None:
     try:
         db.executer(
-            "INSERT INTO notifications (demande_id, canal, destinataire, sujet, statut, erreur) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (demande_id, canal, destinataire or "", (sujet or "")[:200], statut, (erreur or "")[:500]))
+            "INSERT INTO notifications (demande_id, canal, destinataire, sujet, statut, erreur, conversation_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (demande_id, canal, destinataire or "", (sujet or "")[:200], statut,
+             (erreur or "")[:500], conversation_id or ""))
     except Exception as exc:
         log.warning("Notification non consignée : %s", exc)
 
@@ -138,6 +141,8 @@ def notifier_hoteliers(db, demande_id, motif: str = "nouvelle_demande") -> dict:
     if not dem:
         return {"ok": False, "erreur": "demande inconnue"}
     sujet, corps = composer_fiche(db, dem)
+    if motif == "annulation_hote":
+        sujet = "[Annulation par l'hôte] " + sujet
     dest = destinataires(db)
     resultats = []
 
@@ -175,17 +180,18 @@ def notifier_hoteliers(db, demande_id, motif: str = "nouvelle_demande") -> dict:
 # ---------------------------------------------------------------------------
 def _alerter(db, sujet, corps, conversation_id=None, demande_id=None) -> dict:
     dest = destinataires(db)
-    _consigner(db, demande_id, "dashboard", "frères hôteliers", sujet, "envoye")
+    _consigner(db, demande_id, "dashboard", "frères hôteliers", sujet, "envoye",
+               conversation_id=conversation_id)
     resultats = []
-    if dest["emails"]:
+    if dest["emails"] and config.drapeau_parametre(db, "notifier_par_email", True):
         res = emailer.envoyer(db, dest["emails"], sujet, corps)
         _consigner(db, demande_id, "email", ", ".join(dest["emails"]), sujet,
-                   _statut(res), res.get("erreur", ""))
+                   _statut(res), res.get("erreur", ""), conversation_id=conversation_id)
         resultats.append({"canal": "email", **res})
-    for numero in dest["whatsapp"]:
+    for numero in (dest["whatsapp"] if config.drapeau_parametre(db, "notifier_par_whatsapp", True) else []):
         res = whatsapp.envoyer(db, numero, corps, demande_id=demande_id)
         _consigner(db, demande_id, "whatsapp", whatsapp.afficher_numero(numero), sujet,
-                   _statut(res), res.get("erreur", ""))
+                   _statut(res), res.get("erreur", ""), conversation_id=conversation_id)
         resultats.append({"canal": "whatsapp", **res})
     db.journal("agent", "alerte", str(conversation_id or demande_id or ""), sujet)
     return {"ok": any(r.get("ok") for r in resultats), "resultats": resultats}

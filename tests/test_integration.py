@@ -1,11 +1,13 @@
 """Tests d'intégration locaux : aucune communication externe ni donnée réelle."""
 import datetime as dt
+import concurrent.futures
 import hashlib
 import hmac
 import http.client
 import json
 import os
 import subprocess
+import sqlite3
 import sys
 import re
 import tempfile
@@ -16,7 +18,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
-from hotellerie import config, seed, securite
+from hotellerie import config, seed, securite, metier, notify
 from hotellerie.agent.engine import Agent
 from hotellerie.agent import comprehension
 from hotellerie.channels import whatsapp
@@ -95,8 +97,25 @@ class Integration(unittest.TestCase):
             self.assertEqual(base_cli.valeur('SELECT COUNT(*) FROM demandes'), 0)
             self.assertEqual(base_cli.valeur('SELECT COUNT(*) FROM notifications'), 0)
             self.assertEqual(base_cli.valeur('SELECT COUNT(*) FROM envois'), 0)
+            self.assertGreater(base_cli.valeur('SELECT COUNT(*) FROM connaissances'), 0)
+            self.assertGreater(base_cli.valeur('SELECT COUNT(*) FROM chambres'), 0)
         finally:
             base_cli.fermer()
+
+    def test_creation_compte_initialise_les_donnees_et_ne_revele_pas_le_jeton(self):
+        env = dict(os.environ, HOTELLERIE_DATA_DIR=str(Path(self.tmp.name) / 'premier-demarrage'),
+                   wa_verify_token='secret-a-ne-pas-afficher')
+        subprocess.run([sys.executable, 'run.py', 'utilisateur', '--login', 'hotel',
+                        '--motdepasse', 'motdepasse-test'], env=env, check=True, capture_output=True)
+        base_cli = Base(Path(env['HOTELLERIE_DATA_DIR']) / 'hotellerie.db')
+        try:
+            self.assertGreater(base_cli.valeur('SELECT COUNT(*) FROM connaissances'), 0)
+            self.assertEqual(base_cli.valeur('SELECT COUNT(*) FROM chambres'), 9)
+        finally:
+            base_cli.fermer()
+        sortie = subprocess.run([sys.executable, 'run.py', 'whatsapp'], env=env,
+                                check=True, capture_output=True, text=True).stdout
+        self.assertNotIn('secret-a-ne-pas-afficher', sortie)
 
     def test_question_pendant_collecte_ne_devient_pas_un_nom(self):
         agent = Handler.agent
@@ -140,6 +159,7 @@ class Integration(unittest.TestCase):
         demandes = self.db.lignes('SELECT * FROM demandes')
         self.assertEqual(len(demandes), 1)
         self.assertEqual(demandes[0]['statut'], 'en_attente')
+        self.assertEqual(demandes[0]['telephone'], '2250700000000')
         self.assertEqual(demandes[0]['date_arrivee'], arrivee.isoformat())
         self.assertEqual(demandes[0]['date_depart'], depart.isoformat())
         self.assertEqual(self.db.valeur('SELECT COUNT(*) FROM envois'), len(textes))
@@ -155,7 +175,7 @@ class Integration(unittest.TestCase):
             copie.fermer()
         config.definir_parametre(self.db, 'wa_token', 'test')
         config.definir_parametre(self.db, 'wa_phone_number_id', 'id')
-        with patch('hotellerie.channels.whatsapp._requete', side_effect=[{}, OSError('réseau')]):
+        with patch('hotellerie.channels.whatsapp._requete', side_effect=[{'messages': [{'id': 'wamid.test'}]}, OSError('réseau')]):
             result = whatsapp.envoyer(self.db, '0700000000', 'Premier. ' * 400)
         self.assertFalse(result['ok'])
         self.assertGreater(result['morceaux'], 0)
@@ -203,6 +223,205 @@ class Integration(unittest.TestCase):
         self.assertTrue(agent.repondre('2250700000000', 'Bonjour'))
         self.assertTrue(agent.repondre('2250700000000', 'Bonjour'))
         self.assertEqual(self.db.valeur("SELECT humain_requis FROM conversations WHERE id='2250700000000'"), 0)
+
+    def test_reponse_humaine_depuis_conversation_sans_dossier(self):
+        cid = '2250700000000'
+        agent = Handler.agent
+        agent.repondre(cid, 'Bonjour', telephone=cid)
+        self.login()
+        page = self.request('GET', '/conversations/' + cid)[2]
+        csrf = re.search(r'name="csrf" value="([^"]+)"', page).group(1)
+        payload = {'csrf': csrf, 'message': 'Bienvenue, je vous réponds.'}
+        status, _, _ = self.request('POST', '/conversations/' + cid + '/repondre', payload)
+        self.assertEqual(status, 303)
+        self.assertEqual(self.db.valeur('SELECT COUNT(*) FROM envois'), 0)
+        self.request('POST', '/conversations/' + cid + '/relais', {'csrf': csrf, 'action': 'prendre'})
+        page = self.request('GET', '/conversations/' + cid)[2]
+        self.assertIn('Envoyer à l’hôte'.replace('’', "'"), page)
+        status, _, _ = self.request('POST', '/conversations/' + cid + '/repondre', payload)
+        self.assertEqual(status, 303)
+        self.assertEqual(self.db.valeur('SELECT COUNT(*) FROM envois'), 1)
+        self.assertIn('en attente d&#x27;envoi', self.request('GET', '/conversations/' + cid)[2])
+        self.assertEqual(agent.repondre(cid, 'Allô ?', telephone=cid), '')
+        config.definir_parametre(self.db, 'wa_token', 'test')
+        config.definir_parametre(self.db, 'wa_phone_number_id', 'id')
+        with patch('hotellerie.channels.whatsapp._requete', return_value={'messages': [{'id': 'wamid.test'}]}):
+            resultat = whatsapp.rejouer(self.db)
+        self.assertEqual(resultat['envoyes'], 1)
+        self.assertIn('accepté par WhatsApp', self.request('GET', '/conversations/' + cid)[2])
+
+    def test_urgence_met_en_relais_et_notification_liee(self):
+        cid = '2250700000000'
+        response = Handler.agent.repondre(cid, "C'est urgent, mon frère est très malade", telephone=cid)
+        self.assertIn('secours', response.lower())
+        self.assertEqual(self.db.valeur('SELECT humain_requis FROM conversations WHERE id=?', (cid,)), 1)
+        self.assertEqual(self.db.valeur('SELECT conversation_id FROM notifications WHERE canal=?', ('dashboard',)), cid)
+        self.login()
+        page = self.request('GET', '/notifications')[2]
+        self.assertIn('/conversations/' + cid, page)
+        self.assertIn('URGENCE', page)
+
+    def test_attribution_bloque_chevauchements_et_debordement_mois(self):
+        chambre = self.db.valeur('SELECT id FROM chambres ORDER BY id LIMIT 1')
+        a = metier.creer_demande(self.db, {'nom': 'A', 'date_arrivee': '2030-12-30',
+                                          'date_depart': '2031-01-03', 'nb_personnes': 1})
+        b = metier.creer_demande(self.db, {'nom': 'B', 'date_arrivee': '2030-12-31',
+                                          'date_depart': '2031-01-02', 'nb_personnes': 1})
+        with self.assertRaises(ValueError):
+            metier.changer_statut(self.db, b, 'confirmee')
+        metier.attribuer_chambre(self.db, a, chambre)
+        normal = metier.verifier_disponibilite(self.db, '2030-12-30', '2031-01-03', 1)
+        propre = metier.verifier_disponibilite(self.db, '2030-12-30', '2031-01-03', 1,
+                                               exclure_demande_id=a)
+        self.assertNotIn(chambre, [c['id'] for c in normal['chambres_libres']])
+        self.assertIn(chambre, [c['id'] for c in propre['chambres_libres']])
+        with self.assertRaises(ValueError):
+            metier.attribuer_chambre(self.db, b, chambre)
+        with self.assertRaises(ValueError):
+            metier.creer_blocage(self.db, chambre, '2030-12-31', '2031-01-01')
+        self.assertIn(('2030-12-31', chambre), metier.occupation_mois(self.db, 2030, 12)['cases'])
+        self.assertIn(('2031-01-01', chambre), metier.occupation_mois(self.db, 2031, 1)['cases'])
+        self.assertEqual(self.db.valeur('SELECT statut FROM demandes WHERE id=?', (b,)), 'en_attente')
+        metier.attribuer_chambre(self.db, a, 0)
+        self.assertEqual(self.db.valeur('SELECT statut FROM demandes WHERE id=?', (a,)), 'en_attente')
+        metier.attribuer_chambre(self.db, b, chambre)
+        self.assertEqual(self.db.valeur('SELECT statut FROM demandes WHERE id=?', (b,)), 'confirmee')
+
+    def test_attribution_rejette_dates_blocage_et_capacite(self):
+        chambre = self.db.valeur('SELECT id FROM chambres ORDER BY id LIMIT 1')
+        metier.creer_blocage(self.db, chambre, '2031-02-01', '2031-02-03')
+        dem = metier.creer_demande(self.db, {'nom': 'A', 'date_arrivee': '2031-02-01',
+                                             'date_depart': '2031-02-03', 'nb_personnes': 1})
+        with self.assertRaises(ValueError):
+            metier.attribuer_chambre(self.db, dem, chambre)
+        dem2 = metier.creer_demande(self.db, {'nom': 'B', 'date_arrivee': '2031-03-01',
+                                              'date_depart': '2031-03-03', 'nb_personnes': 100})
+        with self.assertRaises(ValueError):
+            metier.attribuer_chambre(self.db, dem2, chambre)
+        with self.assertRaises(ValueError):
+            metier.creer_blocage(self.db, chambre, '2031-03-04', '2031-03-03')
+
+    def test_migration_notifications_ancienne_base(self):
+        chemin = Path(self.tmp.name) / 'ancienne.db'
+        conn = sqlite3.connect(chemin)
+        conn.execute("CREATE TABLE notifications (id INTEGER PRIMARY KEY, demande_id INTEGER, canal TEXT NOT NULL, destinataire TEXT NOT NULL DEFAULT '', sujet TEXT NOT NULL DEFAULT '', statut TEXT NOT NULL DEFAULT 'envoye', erreur TEXT NOT NULL DEFAULT '', horodatage TEXT NOT NULL DEFAULT '')")
+        conn.commit()
+        conn.close()
+        ancienne = Base(chemin)
+        try:
+            notify._alerter(ancienne, 'Test', 'Corps', conversation_id='test-conversation')
+            self.assertEqual(ancienne.valeur('SELECT conversation_id FROM notifications'), 'test-conversation')
+        finally:
+            ancienne.fermer()
+
+    def test_apres_transmission_annulation_et_nouveau_sejour(self):
+        agent, cid = Handler.agent, 'api-client'
+        arrivee = dt.date.today() + dt.timedelta(days=90)
+        depart = arrivee + dt.timedelta(days=3)
+        for texte in ('Je voudrais venir en retraite', 'Jean Kouassi', 'Abidjan',
+                      f'{arrivee.isoformat()} au {depart.isoformat()}', 'seul', 'rien de particulier', 'oui'):
+            response = agent.repondre(cid, texte, canal='api')
+        self.assertNotIn('24', response)
+        self.assertIsNotNone(self.db.valeur('SELECT demande_id FROM conversations WHERE id=?', (cid,)))
+        agent.repondre(cid, 'Merci beaucoup', canal='api')
+        self.assertEqual(self.db.valeur('SELECT etat FROM conversations WHERE id=?', (cid,)), 'transmis')
+        response = agent.repondre(cid, 'Je voudrais annuler', canal='api')
+        self.assertIn('retirée', response)
+        self.assertEqual(self.db.valeur('SELECT statut FROM demandes'), 'annulee')
+        self.assertEqual(self.db.valeur('SELECT etat FROM conversations WHERE id=?', (cid,)), 'annule')
+        self.assertTrue(self.db.valeur("SELECT COUNT(*) FROM notifications WHERE sujet LIKE '%Annulation%'") > 0)
+        agent.repondre(cid, 'Je voudrais venir en retraite', canal='api')
+        self.assertIsNone(self.db.valeur('SELECT demande_id FROM conversations WHERE id=?', (cid,)))
+
+    def test_modification_apres_transmission_est_remise_a_un_frere(self):
+        agent, cid = Handler.agent, 'api-client'
+        arrivee = dt.date.today() + dt.timedelta(days=90)
+        depart = arrivee + dt.timedelta(days=3)
+        for texte in ('Je voudrais venir en retraite', 'Jean Kouassi', 'Abidjan',
+                      f'{arrivee.isoformat()} au {depart.isoformat()}', 'seul', 'rien de particulier', 'oui'):
+            agent.repondre(cid, texte, canal='api')
+        response = agent.repondre(cid, 'Je souhaite modifier les dates', canal='api')
+        self.assertIn('frères', response.lower())
+        self.assertEqual(self.db.valeur('SELECT humain_requis FROM conversations WHERE id=?', (cid,)), 1)
+        self.assertEqual(self.db.valeur('SELECT date_arrivee FROM demandes'), arrivee.isoformat())
+
+    def test_whatsapp_diagnostic_prudent_et_sans_secret_affiche(self):
+        config.definir_parametre(self.db, 'wa_verify_token', 'jeton-secret-test')
+        config.definir_parametre(self.db, 'wa_token', 'jeton-test')
+        config.definir_parametre(self.db, 'wa_phone_number_id', '123')
+        config.definir_parametre(self.db, 'site_url', 'http://localhost')
+        with patch('hotellerie.channels.whatsapp.verifier_compte', return_value={'ok': True, 'compte': {}}):
+            bilan = whatsapp.diagnostic(self.db)
+        self.assertFalse(bilan['pret'])
+        self.assertFalse(whatsapp.url_https_publique('http://localhost'))
+        self.assertFalse(whatsapp.url_https_publique('https://127.0.0.1'))
+        self.assertTrue(whatsapp.url_https_publique('https://exemple.org'))
+        config.definir_parametre(self.db, 'wa_dernier_diagnostic', json.dumps({'type': 'essai',
+                                 'etapes': [{'etape': 'Message envoyé', 'ok': True}]}))
+        self.login()
+        page = self.request('GET', '/whatsapp')[2]
+        self.assertNotIn('jeton-secret-test', page)
+        self.assertNotIn('WhatsApp est prêt', page)
+        self.assertNotIn('2250151740187', page)
+
+    def test_dates_ne_deviendront_pas_des_numeros_de_telephone(self):
+        for texte in ('2030-12-01 au 2030-12-04', 'le 12 10 2027', '12/10/2027'):
+            self.assertEqual(comprehension.extraire_telephone(texte), '')
+        self.assertEqual(comprehension.extraire_telephone('Mon numéro : 07 47 52 05 57'), '0747520557')
+        self.assertEqual(comprehension.extraire_telephone('2030-12-01, téléphone 07 47 52 05 57'), '0747520557')
+
+    def test_reponse_meta_sans_identifiant_reste_incertaine(self):
+        config.definir_parametre(self.db, 'wa_token', 'test')
+        config.definir_parametre(self.db, 'wa_phone_number_id', 'id')
+        with patch('hotellerie.channels.whatsapp._requete', return_value={}):
+            result = whatsapp.envoyer(self.db, '0700000000', 'Bonjour')
+        self.assertFalse(result['ok'])
+        self.assertIn('incertaine', result['erreur'])
+        self.assertEqual(self.db.valeur('SELECT statut FROM envois'), 'echoue')
+
+    def test_numero_et_message_invalides_ne_sont_pas_en_files(self):
+        for numero, texte in (('', 'Bonjour'), ('abc', 'Bonjour'), ('0700000000', '  ')):
+            self.assertFalse(whatsapp.envoyer(self.db, numero, texte)['ok'])
+        self.assertEqual(self.db.valeur('SELECT COUNT(*) FROM envois'), 0)
+
+    def test_attributions_concurrentes_une_seule_confirmee(self):
+        chambre = self.db.valeur('SELECT id FROM chambres ORDER BY id LIMIT 1')
+        demandes = [metier.creer_demande(self.db, {'nom': str(n), 'date_arrivee': '2032-03-01',
+                                                    'date_depart': '2032-03-03', 'nb_personnes': 1})
+                    for n in range(2)]
+        barriere = threading.Barrier(2)
+        def attribuer(identifiant):
+            barriere.wait()
+            try:
+                metier.attribuer_chambre(self.db, identifiant, chambre)
+                return True
+            except ValueError:
+                return False
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            resultats = list(pool.map(attribuer, demandes))
+        self.assertEqual(sum(resultats), 1)
+        self.assertEqual(self.db.valeur("SELECT COUNT(*) FROM demandes WHERE statut='confirmee'"), 1)
+
+    def test_requete_trop_grande_rejetee_avant_lecture(self):
+        conn = http.client.HTTPConnection('127.0.0.1', self.server.server_port, timeout=5)
+        try:
+            conn.putrequest('POST', '/webhook/whatsapp')
+            conn.putheader('Content-Length', str(1024 * 1024 + 1))
+            conn.endheaders()
+            self.assertEqual(conn.getresponse().status, 413)
+        finally:
+            conn.close()
+
+    def test_delai_valide_est_annonce_uniquement_si_configure(self):
+        config.definir_parametre(self.db, 'agent_delai_reponse', 'deux jours ouvrés')
+        agent, cid = Handler.agent, 'api-delai'
+        arrivee = dt.date.today() + dt.timedelta(days=90)
+        depart = arrivee + dt.timedelta(days=3)
+        for texte in ('Je voudrais venir en retraite', 'Jean Kouassi', 'Abidjan',
+                      f'{arrivee.isoformat()} au {depart.isoformat()}', 'seul', 'rien de particulier', 'oui'):
+            reponse = agent.repondre(cid, texte, canal='api')
+        self.assertIn('deux jours ouvrés', reponse)
+        self.assertIn('indicatif', reponse)
 
     def test_api_reutilisation_et_apercu_sans_file(self):
         config.definir_parametre(self.db, 'api_cle', 'abc-secret')

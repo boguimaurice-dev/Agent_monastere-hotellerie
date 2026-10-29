@@ -26,9 +26,12 @@ continue. La fonction expérimentale de reformulation IA n’est pas utilisée.
 5. Effectuer une revue indépendante de sécurité et de confidentialité, définir
    accès, information des hôtes, durée de conservation, suppression et gestion
    des incidents. Les dossiers peuvent contenir des informations sensibles.
+   La suppression d'une demande n'efface pas les conversations ou journaux :
+   prévoir une procédure et des outils d'effacement complets.
 6. Renforcer la fiabilité des webhooks et envois : traitement transactionnel
    des événements, reprise après crash, file persistante avec réessais contrôlés,
    contrôle des doublons, alertes, gestion des réponses et restrictions Meta.
+   L'attribution de plusieurs chambres à un seul dossier de groupe reste à créer.
    La déduplication actuelle traite les doublons ordinaires mais ne garantit pas
    une livraison exactement une fois en cas de panne au mauvais moment.
 

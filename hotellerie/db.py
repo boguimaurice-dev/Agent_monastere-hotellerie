@@ -91,6 +91,7 @@ SCHEMA = [
     """CREATE TABLE IF NOT EXISTS notifications (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         demande_id INTEGER,
+        conversation_id TEXT NOT NULL DEFAULT '',
         canal TEXT NOT NULL,
         destinataire TEXT NOT NULL DEFAULT '',
         sujet TEXT NOT NULL DEFAULT '',
@@ -195,6 +196,10 @@ class Base:
             self.conn.execute("PRAGMA synchronous = NORMAL")
             for instruction in SCHEMA:
                 self.conn.execute(instruction)
+            # Migration additive pour les installations créées avant ce champ.
+            colonnes = {r[1] for r in self.conn.execute("PRAGMA table_info(notifications)")}
+            if "conversation_id" not in colonnes:
+                self.conn.execute("ALTER TABLE notifications ADD COLUMN conversation_id TEXT NOT NULL DEFAULT ''")
             self.conn.commit()
         finally:
             self._verrou.release()
