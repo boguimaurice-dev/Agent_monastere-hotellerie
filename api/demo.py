@@ -60,7 +60,7 @@ class handler(Handler):
         if route is not None:
             query = urllib.parse.urlencode([(cle, valeur) for cle, valeur in paires if cle != "__route"])
             self.path = "/" + route.lstrip("/") + ("?" + query if query else "")
-        elif url.path == "/api/demo":
+        elif url.path in ("/api/demo", "/api/demo.py"):
             self.path = "/" + ("?" + url.query if url.query else "")
         super()._dispatcher(methode)
 

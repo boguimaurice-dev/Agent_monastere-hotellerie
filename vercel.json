@@ -1,9 +1,18 @@
 {
   "version": 2,
   "builds": [
-    {"src": "api/demo.py", "use": "@vercel/python", "config": {"includeFiles": "{hotellerie/**,base_connaissances.json}"}}
+    {
+      "src": "api/demo.py",
+      "use": "@vercel/python",
+      "config": {
+        "includeFiles": "{hotellerie/**,base_connaissances.json}"
+      }
+    }
   ],
-  "rewrites": [
-    {"source": "/((?!api/demo).*)", "destination": "/api/demo?__route=$1"}
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/api/demo.py?__route=$1"
+    }
   ]
 }
